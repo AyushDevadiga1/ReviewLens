@@ -1,0 +1,32 @@
+# Virtual environment
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Secrets
+.env
+
+# ai-agents
+.qodo
+.opencode
+
+# ML artifacts
+ml/fake_review/model/
+mlruns/
+mlflow.db
+
+# Datasets (downloaded, not committed)
+data/
+
+# Scraping output
+scraper_cache/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

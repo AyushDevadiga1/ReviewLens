@@ -1,0 +1,21 @@
+# Dockerfile.frontend — ReviewLens Streamlit dashboard
+# Separate from the API image so each service stays lean.
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Streamlit only needs a subset of the full requirements
+RUN pip install --no-cache-dir \
+    streamlit==1.28.2 \
+    plotly==5.18.0 \
+    pandas==2.1.3 \
+    requests==2.31.0 \
+    python-dotenv==1.0.0
+
+COPY frontend/ ./frontend/
+COPY ml/absa/aspects.py ./ml/absa/aspects.py
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "frontend/app.py", "--server.port=8501", "--server.address=0.0.0.0"]

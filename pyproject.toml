@@ -1,0 +1,50 @@
+[tool.ruff]
+# Target the same Python version as the project
+target-version = "py311"
+
+# Maximum line length (Black-compatible)
+line-length = 88
+
+# Folders ruff should check
+src = ["api", "ml", "scraper", "db", "frontend", "tests"]
+
+# Exclude generated/vendor directories
+exclude = [
+    ".venv",
+    ".git",
+    "__pycache__",
+    "db/migrations",
+    "ml/fake_review/model",
+]
+
+[tool.ruff.lint]
+# Rule sets:
+#   E / W  — pycodestyle errors and warnings
+#   F      — pyflakes (undefined names, unused imports)
+#   I      — isort (import ordering)
+#   UP     — pyupgrade (modernise syntax for py311)
+#   B      — flake8-bugbear (likely bugs and design issues)
+#   SIM    — flake8-simplify (simplifiable code patterns)
+select = ["E", "W", "F", "I", "UP", "B", "SIM"]
+
+# Ignore rules that conflict with the project's style
+ignore = [
+    "E501",   # line too long — handled by formatter
+    "B008",   # do not perform function calls in default arguments (FastAPI Depends pattern)
+    "SIM108", # ternary operator — readability preference
+]
+
+[tool.ruff.lint.isort]
+# Keep first-party imports grouped together
+known-first-party = ["api", "db", "ml", "scraper", "frontend"]
+
+[tool.ruff.format]
+# Use double quotes everywhere
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+# Where pytest looks for tests
+testpaths = ["tests"]
+# Show short traceback for cleaner CI output
+addopts = "-v --tb=short"

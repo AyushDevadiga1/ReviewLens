@@ -7,7 +7,7 @@ Reads DATABASE_URL from environment variables.
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models import Base
+from db.models import Base
 
 
 # Read from environment — set in .env or docker-compose.yml

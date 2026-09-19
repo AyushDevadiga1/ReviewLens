@@ -1,90 +1,51 @@
 """
 amazon.py
-Amazon India review scraper.
-Scrapes up to max_pages of reviews for a given product URL.
+Amazon India review scraper — DEPRECATED (not used in production pipeline).
 
-IMPORTANT: Add delays between requests (time.sleep(2-3 seconds))
-to avoid rate limiting. Respect robots.txt.
+## Why this file is a stub
+
+Amazon's anti-scraping infrastructure as of 2025-26 makes direct scraping
+effectively impossible through conventional methods:
+
+  - Bot fingerprinting: headless browsers (Selenium, Playwright) are detected
+    via browser API checks that headless Chrome fails
+  - Dynamic content: reviews are loaded via internal XHR APIs, not in the
+    initial HTML response — BeautifulSoup on the raw page returns nothing
+  - IP reputation: home, college, and cloud VM IPs are flagged near-instantly
+  - Silent failures: Amazon sometimes serves a stripped page with no reviews
+    and returns HTTP 200 — you think it worked but got nothing
+
+Proxies and paid scraping APIs have 40-60% success rates on Amazon
+specifically, making them unreliable for a demo environment.
+
+## What we use instead
+
+ReviewLens uses the McAuley Lab "Amazon Review Data (2018)" dataset:
+
+  Dataset : Cell Phones & Accessories — 5-core subset
+  Reviews : 1,128,437 real Amazon reviews
+  Columns : reviewerID, asin, reviewerName, vote, reviewText,
+            overall (rating 1-5), summary, unixReviewTime,
+            reviewTime, verified, style
+  Download: https://jmcauley.ucsd.edu/data/amazon_v2/categoryFilesSmall/
+            Cell_Phones_and_Accessories_5.json.gz
+  Format  : gzipped JSON-lines (.json.gz), one review per line
+  Citation: Ni et al., EMNLP 2019 — "Justifying recommendations using
+            distantly-labeled reviews and fine-grained aspects"
+
+The dataset loader lives in: scraper/dataset_loader.py
+It reads the .json.gz file and maps McAuley columns → ReviewLens schema,
+then writes to PostgreSQL via the same DB session used by the live pipeline.
+
+## If you want to attempt live scraping in the future
+
+Flipkart is significantly more scrapeable — server-rendered HTML,
+less aggressive bot detection. See scraper/flipkart.py.
+
+ScraperAPI (https://www.scraperapi.com) has a free tier (1000 req/month)
+that handles proxy rotation and JS rendering, and works on Amazon at
+demo scale. Requires API key in .env as SCRAPER_API_KEY.
 """
 
-import time
-import requests
-from bs4 import BeautifulSoup
-from typing import List, Optional
-from cleaner import clean_review_text, extract_review_metadata
-
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "en-IN,en;q=0.9",
-}
-
-
-def get_product_name(soup: BeautifulSoup) -> str:
-    """
-    Extract product name from Amazon product page.
-    TODO:
-      Look for: soup.find("span", {"id": "productTitle"})
-      Strip whitespace from .get_text()
-      Return "Unknown Product" if not found
-    """
-    pass
-
-
-def parse_review_page(soup: BeautifulSoup) -> List[dict]:
-    """
-    Parse all reviews from one page of Amazon reviews.
-
-    Each review block on Amazon has:
-    - data-hook="review" — the review container div
-    - data-hook="review-body" — the review text
-    - data-hook="review-star-rating" — star rating
-    - data-hook="review-date" — date string
-    - data-hook="avp-badge" — verified purchase badge
-
-    Returns:
-        List of raw review dicts (not yet cleaned)
-
-    TODO:
-      1. Find all divs with data-hook="review"
-      2. For each: extract text, rating, date, verified status
-      3. Return list of raw dicts
-    """
-    pass
-
-
-def scrape_product_reviews(
-    product_url: str,
-    max_pages: int = 5
-) -> dict:
-    """
-    Scrape up to max_pages of reviews for a product URL.
-
-    Args:
-        product_url: Amazon India product URL
-        max_pages: maximum number of review pages to scrape
-
-    Returns:
-        dict with:
-        - product_name: str
-        - platform: "amazon"
-        - url: product_url
-        - reviews: list of cleaned review dicts
-
-    TODO:
-      1. Extract ASIN from URL using regex: r'/dp/([A-Z0-9]{10})'
-      2. Build review pages URL:
-         f"https://www.amazon.in/product-reviews/{asin}/?pageNumber={page}"
-      3. For each page 1..max_pages:
-         a. GET request with HEADERS
-         b. Parse with BeautifulSoup
-         c. Call parse_review_page()
-         d. Call extract_review_metadata() on each raw review
-         e. time.sleep(2) between pages — avoid rate limiting
-      4. Return structured dict
-    """
-    pass
+# This file is intentionally not implemented.
+# See scraper/dataset_loader.py for the actual data ingestion pipeline.

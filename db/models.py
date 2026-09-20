@@ -1,111 +1,85 @@
-"""
-models.py
-SQLAlchemy ORM models for ReviewLens.
-Five core tables: products, reviews, fake_scores, aspect_sentiments, api_logs.
-Run migrations with: alembic upgrade head
-"""
-
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean,
-    DateTime, Text, ForeignKey, JSON
+    DateTime, Text, ForeignKey, UniqueConstraint
 )
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, mapped_column, Mapped
 from datetime import datetime
 
 Base = declarative_base()
 
 
 class Product(Base):
-    """
-    Stores product metadata scraped from e-commerce URLs.
-    One row per unique product.
-    """
+    """One row per unique product. Platform + name must be unique together."""
     __tablename__ = "products"
 
-    # TODO: define columns
-    # id          — Integer, primary key, autoincrement
-    # name        — String(500), not null
-    # url         — String(1000), unique, not null
-    # platform    — String(50) e.g. "amazon", "flipkart"
-    # category    — String(200) e.g. "smartphones"
-    # scraped_at  — DateTime, default=datetime.utcnow
-    # reviews     — relationship to Review (one product → many reviews)
-    pass
+    id       : Mapped[int] = mapped_column(Integer, primary_key=True)
+    name     : Mapped[str] = mapped_column(String(500), nullable=False)
+    platform : Mapped[str] = mapped_column(String(50))
+    category : Mapped[str] = mapped_column(String(200))
+
+    reviews  : Mapped[list["Review"]] = relationship("Review", back_populates="product")
+
+    __table_args__ = (
+        UniqueConstraint("name", "platform", name="uq_product_name_platform"),
+    )
 
 
 class Review(Base):
-    """
-    Stores individual reviews scraped from product pages.
-    One row per review.
-    """
+    """One row per review. review_date nullable to support datasets with no date column."""
     __tablename__ = "reviews"
 
-    # TODO: define columns
-    # id                — Integer, primary key, autoincrement
-    # product_id        — Integer, ForeignKey("products.id"), not null
-    # review_text       — Text, not null
-    # rating            — Float (1.0 to 5.0)
-    # reviewer_name     — String(200)
-    # review_date       — DateTime
-    # verified_purchase — Boolean, default=False
-    # review_length     — Integer (computed: len(review_text))
-    # scraped_at        — DateTime, default=datetime.utcnow
-    # product           — relationship back to Product
-    # fake_score        — relationship to FakeScore (one review → one score)
-    # aspect_sentiments — relationship to AspectSentiment (one review → many)
-    pass
+    id                : Mapped[int]      = mapped_column(Integer, primary_key=True)
+    product_id        : Mapped[int]      = mapped_column(Integer, ForeignKey("products.id"), nullable=False)
+    reviewer_name     : Mapped[str]      = mapped_column(String(200))
+    review_text       : Mapped[str]      = mapped_column(Text, nullable=False)
+    review_date       : Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    rating            : Mapped[float]    = mapped_column(Float, nullable=False)
+    verified_purchase : Mapped[bool]     = mapped_column(Boolean, default=False)
+    review_length     : Mapped[int]      = mapped_column(Integer, nullable=True)
+
+    product           : Mapped["Product"]            = relationship("Product", back_populates="reviews")
+    fake_score        : Mapped["FakeScore"]          = relationship("FakeScore", back_populates="review", uselist=False)
+    aspect_sentiments : Mapped[list["AspectSentiment"]] = relationship("AspectSentiment", back_populates="review")
 
 
 class FakeScore(Base):
-    """
-    Stores fake review detection results for each review.
-    One row per review (1:1 with Review).
-    """
+    """One row per review — 1:1 with Review."""
     __tablename__ = "fake_scores"
 
-    # TODO: define columns
-    # id             — Integer, primary key, autoincrement
-    # review_id      — Integer, ForeignKey("reviews.id"), unique, not null
-    # is_fake        — Boolean, not null
-    # confidence     — Float (0.0 to 1.0)
-    # model_version  — String(50) e.g. "logistic_v1", "distilbert_v2"
-    # scored_at      — DateTime, default=datetime.utcnow
-    # review         — relationship back to Review
-    pass
+    id            : Mapped[int]      = mapped_column(Integer, primary_key=True)
+    review_id     : Mapped[int]      = mapped_column(Integer, ForeignKey("reviews.id"), nullable=False, unique=True)
+    is_fake       : Mapped[bool]     = mapped_column(Boolean, nullable=False)
+    confidence    : Mapped[float]    = mapped_column(Float, nullable=False)
+    model_version : Mapped[str]      = mapped_column(String(50))
+    scored_at     : Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    review : Mapped["Review"] = relationship("Review", back_populates="fake_score")
 
 
 class AspectSentiment(Base):
-    """
-    Stores per-aspect sentiment for each genuine review.
-    Multiple rows per review (one per aspect found).
-    """
+    """One row per aspect found per review. Multiple rows per review."""
     __tablename__ = "aspect_sentiments"
 
-    # TODO: define columns
-    # id             — Integer, primary key, autoincrement
-    # review_id      — Integer, ForeignKey("reviews.id"), not null
-    # aspect         — String(100) e.g. "battery", "camera", "display"
-    # sentiment      — String(20) e.g. "positive", "negative", "neutral"
-    # confidence     — Float (0.0 to 1.0)
-    # model_version  — String(50)
-    # scored_at      — DateTime, default=datetime.utcnow
-    # review         — relationship back to Review
-    pass
+    id            : Mapped[int]      = mapped_column(Integer, primary_key=True)
+    review_id     : Mapped[int]      = mapped_column(Integer, ForeignKey("reviews.id"), nullable=False)
+    aspect        : Mapped[str]      = mapped_column(String(100))
+    sentiment     : Mapped[str]      = mapped_column(String(20))
+    confidence    : Mapped[float]    = mapped_column(Float)
+    model_version : Mapped[str]      = mapped_column(String(50))
+    scored_at     : Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    review : Mapped["Review"] = relationship("Review", back_populates="aspect_sentiments")
 
 
 class ApiLog(Base):
-    """
-    Logs every API request for monitoring and rate limiting.
-    """
+    """One row per API request."""
     __tablename__ = "api_logs"
 
-    # TODO: define columns
-    # id           — Integer, primary key, autoincrement
-    # endpoint     — String(200) e.g. "/analyze"
-    # method       — String(10) e.g. "POST"
-    # api_key_hash — String(64) — hashed API key (never store plain text)
-    # status_code  — Integer
-    # latency_ms   — Float
-    # requested_at — DateTime, default=datetime.utcnow
-    pass
+    id           : Mapped[int]      = mapped_column(Integer, primary_key=True)
+    endpoint     : Mapped[str]      = mapped_column(String(200))
+    method       : Mapped[str]      = mapped_column(String(10))
+    api_key_hash : Mapped[str]      = mapped_column(String(64))
+    status_code  : Mapped[int]      = mapped_column(Integer)
+    latency_ms   : Mapped[float]    = mapped_column(Float)
+    requested_at : Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

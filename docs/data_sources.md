@@ -1,130 +1,129 @@
 # ReviewLens — Data Sources
 
-## Amazon Reviews
-
-### Why we don't scrape Amazon live
-
-Amazon's anti-scraping infrastructure makes direct scraping effectively
-impossible through conventional methods as of 2025-26:
-
-- **Bot fingerprinting** — headless browsers (Selenium, Playwright) are
-  detected via browser API checks that real Chrome passes but headless Chrome
-  fails. There is no reliable workaround at the library level.
-
-- **Dynamic content** — product review pages load their content via internal
-  XHR/fetch calls after the initial page load. BeautifulSoup on the raw HTML
-  response returns an empty reviews section, regardless of how the request
-  is made.
-
-- **IP reputation** — home IPs, college network IPs, and all major cloud
-  provider IP ranges (AWS, GCP, Azure, Render) are flagged near-instantly.
-  Residential proxy pools are also largely flagged.
-
-- **Silent failures** — Amazon sometimes returns HTTP 200 with a stripped page
-  containing no reviews, making it impossible to distinguish a successful
-  scrape from a blocked one without inspecting the response body every time.
-
-Paid scraping APIs (ScraperAPI, Oxylabs, Bright Data) have 40–60% success
-rates on Amazon specifically, making them unreliable for a demo environment
-where a failed scrape during a presentation is unacceptable.
-
-This is not a tooling or skill issue. It is a deliberate infrastructure
-decision by Amazon that even well-funded engineering teams work around by
-using datasets rather than live scraping.
+Live scraping of Amazon and Flipkart was evaluated and abandoned due to dynamic
+content loading, bot fingerprinting, and IP blocking — the same constraints that
+cause industry teams to rely on licensed data feeds and research datasets.
+ReviewLens uses two offline datasets instead.
 
 ---
 
-### Dataset used
+## Dataset 1 — Amazon (McAuley Lab)
 
 **McAuley Lab — Amazon Review Data (2018)**
-Compiled by Jianmo Ni, Jiacheng Li, Julian McAuley (UCSD).
-Published at EMNLP 2019.
+Compiled by Jianmo Ni, Jiacheng Li, Julian McAuley (UCSD). Published at EMNLP 2019.
 
 | Property | Value |
 |---|---|
 | Category | Cell Phones & Accessories |
-| Subset | 5-core (every user and product has ≥5 reviews) |
+| Subset | 5-core (every user and product has ≥ 5 reviews) |
 | Reviews | 1,128,437 |
-| Products | ~27,000 unique ASINs |
+| Unique products | ~27,000 ASINs |
 | Period | May 1996 – Oct 2018 |
-| Format | Gzipped JSON-lines (.json.gz), one review per line |
-| Size | ~300 MB compressed |
+| Format | Gzipped JSON-lines (.json.gz) — one review per line |
+| Compressed size | ~300 MB |
 
-**Download:**
+**Download (no account required):**
 ```
 https://jmcauley.ucsd.edu/data/amazon_v2/categoryFilesSmall/Cell_Phones_and_Accessories_5.json.gz
 ```
-No account required. Direct download.
+Place the file at: `data/Cell_Phones_and_Accessories_5.json.gz`
 
 **Citation:**
 > Justifying recommendations using distantly-labeled reviews and fine-grained aspects.
-> Jianmo Ni, Jiacheng Li, Julian McAuley.
-> EMNLP 2019.
-
----
+> Jianmo Ni, Jiacheng Li, Julian McAuley. EMNLP 2019.
 
 ### Column mapping
 
 | McAuley column | ReviewLens schema | Notes |
 |---|---|---|
-| `asin` | `products.url` | Used as unique product identifier |
-| `reviewText` | `reviews.review_text` | Cleaned via `scraper/cleaner.py` |
-| `overall` | `reviews.rating` | Float, 1.0–5.0 |
+| `asin` | product identifier | Groups reviews under one Product row |
+| `reviewText` | `reviews.review_text` | Cleaned via `cleaner.py` |
+| `overall` | `reviews.rating` | Float 1.0–5.0 |
 | `reviewerName` | `reviews.reviewer_name` | Truncated to 200 chars |
 | `reviewTime` | `reviews.review_date` | Parsed from "MM DD, YYYY" |
 | `verified` | `reviews.verified_purchase` | Bool |
-| `summary` | Fallback text | Used if `reviewText` is empty |
-| `vote` | Not stored | Helpfulness votes, not needed |
-| `style` | Not stored | Product variant metadata |
+| `summary` | Fallback text | Used when `reviewText` is absent |
+| `vote` | Not stored | Helpfulness votes — not needed |
+
+### Load commands
+
+```bash
+# Dev / demo — 50k reviews (~2 min):
+python -m data_ingestion.loaders.amazon_loader \
+  --file data/Cell_Phones_and_Accessories_5.json.gz \
+  --limit 50000
+
+# Full training data — 1.1M reviews (~20 min):
+python -m data_ingestion.loaders.amazon_loader \
+  --file data/Cell_Phones_and_Accessories_5.json.gz
+```
 
 ---
 
-### Loading the dataset
+## Dataset 2 — Flipkart (Kaggle)
 
-Place the downloaded file in `data/`:
-```
-data/Cell_Phones_and_Accessories_5.json.gz
-```
+**Flipkart Products Review Dataset — 363K reviews**
 
-For development / demo (50,000 reviews, ~2 min):
+| Property | Value |
+|---|---|
+| Reviews | ~363,000 |
+| Format | CSV |
+| Kaggle URL | https://www.kaggle.com/datasets/niraliivaghani/flipkart-dataset |
+
+**Download:**
+Log in to Kaggle → download → place file at: `data/flipkart_reviews.csv`
+
+### Column mapping
+
+| Flipkart column | ReviewLens schema | Notes |
+|---|---|---|
+| `Product Name` | `products.name` + product identifier | Groups reviews under one Product row |
+| `Review` | `reviews.review_text` | Cleaned via `cleaner.py` |
+| `Rate` | `reviews.rating` | Cast to float 1.0–5.0 |
+| `Summary` | Fallback text | Used when `Review` is empty |
+| *(absent)* | `reviews.review_date` = None | No date column in this dataset |
+| *(absent)* | `reviews.verified_purchase` = False | No verified column |
+
+### Load commands
+
 ```bash
-python -m scraper.dataset_loader --file data/Cell_Phones_and_Accessories_5.json.gz --limit 50000
-```
+# Dev / demo — 30k reviews:
+python -m data_ingestion.loaders.flipkart_loader \
+  --file data/flipkart_reviews.csv \
+  --limit 30000
 
-For full training data (1.1M reviews, ~20 min):
-```bash
-python -m scraper.dataset_loader --file data/Cell_Phones_and_Accessories_5.json.gz
+# Full dataset — ~363k reviews:
+python -m data_ingestion.loaders.flipkart_loader \
+  --file data/flipkart_reviews.csv
 ```
-
-`data/` is in `.gitignore` — the file is never committed to the repository.
 
 ---
 
-## Flipkart Reviews
+## Why scraping was abandoned
 
-Flipkart is retained as a live scraping source because:
+### Amazon
+- Dynamic content — reviews load via internal XHR after page load; BeautifulSoup on the raw HTML returns nothing
+- Bot fingerprinting — headless browsers detected via browser API checks real Chrome passes but headless Chrome fails
+- IP reputation — home, college, and all cloud provider IP ranges flagged near-instantly
+- Silent failures — HTTP 200 with no reviews, indistinguishable from a successful scrape without inspecting every response
 
-- Review pages are **server-rendered HTML** — BeautifulSoup on the raw
-  response actually works
-- Bot detection is significantly less aggressive than Amazon
-- Provides a live data source for the demo (product URL → real-time analysis)
+### Flipkart
+- Reviews per product are sparse compared to Amazon (10–30 per page vs 100+)
+- Pagination causes blocking after 2–3 pages
+- Getting meaningful volume (10k+ reviews) would require traversing thousands of product pages — enough traffic to trigger a ban
 
-See `scraper/flipkart.py` for implementation.
-
-**Approach:**
-- Target the reviews section at `https://www.flipkart.com/product/p/reviews`
-- Reviews are inside `div[class*="col EPCmJX"]` containers (verify in
-  browser inspector — Flipkart class names are generated but stable within
-  a version)
-- Use `time.sleep(2)` between pages
-- 5 pages × ~10 reviews per page = ~50 reviews per product, sufficient for demo
+Paid scraping APIs (ScraperAPI, Oxylabs) have 40–60% success rates on Amazon
+and are overkill for a demo. The offline dataset approach is what NLP research
+teams use for the same reason.
 
 ---
 
 ## Summary
 
-| Source | Method | Reviews | Use case |
+| Source | Loader | Reviews | Platform |
 |---|---|---|---|
-| McAuley 2018 dataset | Offline load from .json.gz | 1.1M | ML training, demo data |
-| Flipkart live | requests + BeautifulSoup | ~50/product | Live demo, real-time analysis |
-| Amazon live | ❌ Not feasible | — | Abandoned |
+| McAuley 2018 (.json.gz) | `amazon_loader.py` | 1,128,437 | amazon |
+| Flipkart Kaggle (.csv) | `flipkart_loader.py` | ~363,000 | flipkart |
+| Live scraping | ❌ Abandoned | — | — |
+
+`data/` is in `.gitignore` — dataset files are never committed.

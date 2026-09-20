@@ -6,10 +6,10 @@ B.E. Computer Science (AI & ML)
 
 ## What It Does
 
-Scrapes e-commerce product reviews, filters fake ones with a trained classifier,
-runs Aspect-Based Sentiment Analysis on genuine reviews, stores everything in
-PostgreSQL, and serves results through a FastAPI REST API with a Streamlit
-comparison dashboard.
+Ingests e-commerce product review datasets, filters fake ones with a trained
+classifier, runs Aspect-Based Sentiment Analysis on genuine reviews, stores
+everything in PostgreSQL, and serves results through a FastAPI REST API with a
+Streamlit comparison dashboard.
 
 Three-stage pipeline:
 
@@ -17,112 +17,125 @@ Three-stage pipeline:
 2. ABSA — PyABSA with BERT, extracts per-aspect sentiment scores
 3. Comparative Dashboard — side-by-side aspect comparison across products
 
-## How It Will Work
+## Data Sources
 
-The project is a three-stage pipeline exposed through a REST API. When a user
-submits a product URL, the following happens end to end:
+Live scraping of Amazon and Flipkart was evaluated and abandoned due to dynamic
+content loading, bot fingerprinting, and IP blocking — the same constraints that
+cause industry teams to rely on licensed data feeds and research datasets.
+
+ReviewLens uses two offline datasets:
+
+| Dataset | Source | Reviews | Use |
+|---|---|---|---|
+| McAuley Amazon Cell Phones 5-core | [UCSD / EMNLP 2019](https://nijianmo.github.io/amazon/) | 1,128,437 | ML training + demo |
+| Flipkart Products Review Dataset | [Kaggle](https://www.kaggle.com/datasets/niraliivaghani/flipkart-dataset) | 363,000 | Flipkart demo data |
+
+See `docs/data_sources.md` for full column mappings and download instructions.
+
+## How It Works
 
 ```
-product URL / review text
+datasets (Amazon JSON + Flipkart CSV)
           │
           ▼
-┌─────────────────────────┐   requests + BeautifulSoup, delays between pages,
-│ 1. scraper/             │   HTML removed, unicode (NFC) normalised,
-│    amazon / flipkart    │   whitespace collapsed → structured review dicts
+┌─────────────────────────┐   Two loaders normalise both datasets
+│ data_ingestion/         │   into the same schema via cleaner.py,
+│   loaders/              │   then batch-write to PostgreSQL.
+│   amazon_loader.py      │
+│   flipkart_loader.py    │
 └─────────────────────────┘
           │
           ▼
-┌─────────────────────────┐   trained classifier (TF-IDF + LogisticRegression,
-│ 2. ml/fake_review       │   DistilBERT optional) labels each review
-│    → fake filter        │   genuine/fake with a confidence score.
+┌─────────────────────────┐   Trained classifier (TF-IDF + LogisticRegression,
+│ ml/fake_review/         │   DistilBERT optional) labels each review
+│   → fake filter         │   genuine/fake with a confidence score.
 └─────────────────────────┘   Fake reviews are dropped before analysis.
           │  genuine only
           ▼
 ┌─────────────────────────┐   PyABSA (BERT) extracts per-mention
-│ 3. ml/absa              │   aspect + sentiment (positive/negative/neutral)
-│    → ABSA               │   with confidence. Raw terms map to the 7
+│ ml/absa/                │   aspect + sentiment (positive/negative/neutral)
+│   → ABSA inference      │   with confidence. Raw terms map to the 7
 └─────────────────────────┘   canonical aspects in ml/absa/aspects.py.
           │
           ▼
 ┌─────────────────────────┐   products, reviews, fake_scores,
-│ 4. db/                  │   aspect_sentiments and api_logs are
-│    SQLAlchemy + Postgres│   persisted via the ORM models.
+│ db/                     │   aspect_sentiments and api_logs are
+│   SQLAlchemy + Postgres │   persisted via the ORM models.
 └─────────────────────────┘
           │
           ▼
-┌─────────────────────────┐   per-aspect scores (0-10), positive/negative/
-│ 5. api/services         │   neutral percentages, per-aspect winner across
-│    aggregator           │   products, and weekly sentiment trends.
-└─────────────────────────┘
-          │
-          ▼
-┌─────────────────────────┐
-│ 6. api/ (FastAPI)       │  serves results over HTTP with
-│    /analyze /compare    │  Pydantic validation, API-key auth,
-│    /trends /health      │  and rate limiting.
+┌─────────────────────────┐   Per-aspect scores (0–10), positive/negative/
+│ api/services/           │   neutral percentages, per-aspect winner across
+│   aggregator            │   products, and weekly sentiment trends.
 └─────────────────────────┘
           │
           ▼
 ┌─────────────────────────┐
-│ 7. frontend/            │  Streamlit dashboard renders radar charts,
-│    (Streamlit)          │  comparison tables and trend lines from the API.
+│ api/ (FastAPI)          │   Serves results over HTTP with Pydantic
+│   /analyze /compare     │   validation, API-key auth, rate limiting.
+│   /trends /health       │
+└─────────────────────────┘
+          │
+          ▼
+┌─────────────────────────┐
+│ frontend/ (Streamlit)   │   Radar charts, comparison tables,
+│                         │   and trend lines from the API.
 └─────────────────────────┘
 ```
 
-In short: the workflow is **scrape → clean → filter fakes → analyze aspects →
-aggregate → store → serve → visualise**, in that order. Only genuine reviews
-reach ABSA, so the sentiment scores reflect real customers rather than paid
-reviews.
-
-## Estimation of Effort
-
-The build follows the reference implementation order (`docs/reviewlens_skeleton.md`) —
-backend first, frontend last:
-
-| Phase                          | Scope                                            |
-|--------------------------------|--------------------------------------------------|
-| Data foundation                | `db/` models + session, cleaner, Amazon scraper  |
-| ML models                      | fake-review training, aspects config, ABSA       |
-| Services                       | fake detector service, aggregator                |
-| API                            | schemas, `/analyze` `/compare` `/trends` `/health`, app wiring |
-| Frontend                       | single-product, compare, trends pages            |
-| Tests                          | pytest per module, then manual Swagger check     |
-
-The core rule: do not build the frontend until `POST /analyze` returns correct
-JSON in Swagger UI.
-
 ## Modules
 
-| Module       | Responsibility                                                    |
-|--------------|-------------------------------------------------------------------|
-| `api/`       | FastAPI app: routers, Pydantic schemas, ML services, middleware   |
-| `db/`        | SQLAlchemy ORM models and session management                      |
-| `ml/`        | Fake-review classifier training, ABSA inference, MLflow tracking  |
-| `scraper/`   | Amazon India + Flipkart review scrapers and text cleaning         |
-| `frontend/`  | Streamlit dashboard (single, compare, trends pages)               |
-| `tests/`     | pytest unit/integration tests per module                          |
-| `docs/`      | Project planning and skeleton reference documents                 |
+| Module              | Responsibility                                                 |
+|---------------------|----------------------------------------------------------------|
+| `data_ingestion/`   | Dataset loaders (Amazon JSON, Flipkart CSV) and text cleaning  |
+| `api/`              | FastAPI app: routers, Pydantic schemas, ML services, middleware |
+| `db/`               | SQLAlchemy ORM models and session management                   |
+| `ml/`               | Fake-review classifier training, ABSA inference, MLflow        |
+| `frontend/`         | Streamlit dashboard (single, compare, trends pages)            |
+| `tests/`            | pytest unit/integration tests per module                       |
+| `docs/`             | Project planning, skeleton reference, data source docs         |
 
 ## Repository Structure
 
 ```
 reviewlens/
+├── data_ingestion/
+│   ├── cleaner.py            # shared text preprocessing
+│   ├── loaders/
+│   │   ├── amazon_loader.py  # McAuley JSON → PostgreSQL
+│   │   └── flipkart_loader.py# Flipkart CSV → PostgreSQL
+│   └── __init__.py
 ├── api/
 │   ├── main.py
-│   ├── routers/          # analyze, compare, trends, health
-│   ├── schemas/          # request, response
-│   ├── services/         # fake_detector, absa, aggregator
-│   └── middleware/       # auth, rate_limit
+│   ├── routers/              # analyze, compare, trends, health
+│   ├── schemas/              # request, response
+│   ├── services/             # fake_detector, absa, aggregator
+│   └── middleware/           # auth, rate_limit
 ├── ml/
-│   ├── fake_review/      # train, evaluate, model/
-│   ├── absa/             # inference, aspects
+│   ├── fake_review/          # train, evaluate, model/
+│   ├── absa/                 # inference, aspects
 │   └── mlflow_tracking.py
-├── scraper/              # amazon, flipkart, cleaner
-├── db/                   # models, session, migrations/
-├── frontend/             # app, pages/
-├── tests/                # test_api, test_fake_detector, test_absa, test_scraper
-├── docs/                 # project plan and skeleton reference
+├── db/                       # models, session, migrations/
+├── frontend/                 # app, pages/
+├── tests/                    # test_api, test_fake_detector, test_absa, test_ingestion
+├── docs/                     # project plan, skeleton, data_sources.md
+├── data/                     # gitignored — place dataset files here
 ├── requirements.txt
 ├── .env.example
 └── README.md
 ```
+
+## Implementation Order
+
+Backend first, frontend last. Do not build the frontend until `POST /analyze`
+returns correct JSON in Swagger UI.
+
+| Phase | Scope |
+|---|---|
+| 1. DB foundation | `db/models.py` → `db/session.py` |
+| 2. Data ingestion | `data_ingestion/cleaner.py` → `amazon_loader.py` → `flipkart_loader.py` |
+| 3. ML models | fake-review training → aspects config → ABSA inference |
+| 4. Services | fake detector service → aggregator |
+| 5. API | schemas → routers → app wiring |
+| 6. Frontend | single-product → compare → trends |
+| 7. Tests | pytest per module → manual Swagger check |

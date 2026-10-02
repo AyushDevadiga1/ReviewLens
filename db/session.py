@@ -5,10 +5,15 @@ Reads DATABASE_URL from environment variables.
 """
 
 import os
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from db.models import Base
+from contextlib import contextmanager
 
+# Must stay above the os.getenv calls below — and above anything that imports
+# this module. override=False by default, so docker-compose env vars still win.
+load_dotenv()
 
 # Read from environment — set in .env or docker-compose.yml
 DATABASE_URL = os.getenv(
@@ -16,6 +21,7 @@ DATABASE_URL = os.getenv(
     "postgresql://reviewlens:password@localhost:5432/reviewlens"
 )
 
+SQL_ECHO = os.getenv("SQL_ECHO", "False").lower() in ("true", "1", "yes")
 
 def get_engine():
     """
@@ -24,7 +30,7 @@ def get_engine():
       return create_engine(DATABASE_URL, echo=False)
       echo=True for debugging (logs all SQL), False for production
     """
-    pass
+    return create_engine(DATABASE_URL,echo=SQL_ECHO) # Close the firehose
 
 
 def get_session_factory():
@@ -34,7 +40,11 @@ def get_session_factory():
       engine = get_engine()
       return sessionmaker(autocommit=False, autoflush=False, bind=engine)
     """
-    pass
+    engine = get_engine()
+    return sessionmaker(autoflush=False,bind=engine)
+
+    # removing autocommit arugument as it is deprecated in SQLORM version 2.0.x 
+    # Will use session.begin() in get_db() instead which replaces this behaviour
 
 
 def create_tables():
@@ -45,9 +55,14 @@ def create_tables():
       engine = get_engine()
       Base.metadata.create_all(bind=engine)
     """
-    pass
+    engine = get_engine()
+    Base.metadata.create_all(bind=engine)
 
+    # Creation of tables ; does not returns anything
 
+SessionLocal = get_session_factory()
+
+@contextmanager
 def get_db():
     """
     FastAPI dependency — yields a database session per request.
@@ -60,4 +75,7 @@ def get_db():
       finally:
           db.close()
     """
-    pass
+
+    with SessionLocal.begin() as db:
+        yield db
+

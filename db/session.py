@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from db.models import Base
-from contextlib import contextmanager
 
 # Must stay above the os.getenv calls below — and above anything that imports
 # this module. override=False by default, so docker-compose env vars still win.
@@ -62,7 +61,6 @@ def create_tables():
 
 SessionLocal = get_session_factory()
 
-@contextmanager
 def get_db():
     """
     FastAPI dependency — yields a database session per request.

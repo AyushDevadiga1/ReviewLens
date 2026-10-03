@@ -3,72 +3,126 @@ request.py
 Pydantic request schemas.
 FastAPI validates all incoming requests against these automatically.
 Invalid requests are rejected with 422 Unprocessable Entity.
+
+Architecture note:
+  ReviewLens uses offline datasets (McAuley Amazon + Flipkart CSV) loaded into
+  PostgreSQL via data_ingestion/. There is no live scraping. The API queries the
+  DB for pre-loaded reviews and runs the ML pipeline on them.
 """
 
-from pydantic import BaseModel, HttpUrl, validator, Field
+from pydantic import BaseModel, Field, validator
 from typing import Optional, List
+from enum import Enum
+
+
+class Platform(str, Enum):
+    """Supported platforms — must match the platform column in the products table."""
+    amazon   = "amazon"
+    flipkart = "flipkart"
 
 
 class AnalyzeRequest(BaseModel):
     """
     Request body for POST /analyze
-    Either product_url OR review_text must be provided, not both.
+
+    Two modes:
+      1. product_name + platform — run full pipeline on a product already in DB
+      2. review_text only        — analyze a single review text directly (no DB lookup)
+
+    Either product_name or review_text must be provided, not both.
     """
-    product_url: Optional[HttpUrl] = Field(
+    product_name: Optional[str] = Field(
         None,
-        description="Full URL of Amazon India or Flipkart product page",
-        example="https://www.amazon.in/dp/B09G3J7G1P"
+        min_length=2,
+        max_length=500,
+        description="Product name as stored in the database",
+        example="OnePlus Nord CE 3 Lite 5G"
+    )
+    platform: Optional[Platform] = Field(
+        None,
+        description="Platform the product is from — required when product_name is provided",
+        example="amazon"
     )
     review_text: Optional[str] = Field(
         None,
         min_length=20,
         max_length=5000,
-        description="Single review text to analyze directly"
-    )
-    max_pages: int = Field(
-        default=3,
-        ge=1,
-        le=10,
-        description="Max review pages to scrape (only used with product_url)"
+        description="Single review text to analyze directly — skips DB lookup"
     )
 
-    # TODO: add validator that ensures either product_url or review_text is provided
-    # @validator('review_text', always=True)
-    # def check_one_input_provided(cls, v, values):
-    #     if not v and not values.get('product_url'):
-    #         raise ValueError('Either product_url or review_text must be provided')
-    #     return v
+    @validator("review_text", always=True)
+    def check_one_input_provided(cls, v, values):
+        if not v and not values.get("product_name"):
+            raise ValueError("Either product_name or review_text must be provided")
+        return v
+
+    @validator("platform", always=True)
+    def platform_required_with_name(cls, v, values):
+        if values.get("product_name") and not v:
+            raise ValueError("platform is required when product_name is provided")
+        return v
 
 
 class CompareRequest(BaseModel):
     """
-    Query parameters for GET /compare
-    Accepts 2-3 product URLs for side-by-side comparison.
+    Request body for POST /compare
+    Accepts 2–3 product IDs for side-by-side aspect comparison.
+    Uses product IDs (integers from DB) — not URLs, since there is no scraper.
     """
-    product_urls: List[HttpUrl] = Field(
+    product_ids: List[int] = Field(
         ...,
         min_items=2,
         max_items=3,
-        description="List of 2-3 product URLs to compare"
+        description="List of 2–3 product IDs from the database to compare"
     )
 
-    # TODO: validator to ensure all URLs are from supported platforms
-    # Supported: amazon.in, flipkart.com
+    @validator("product_ids")
+    def ids_must_be_unique(cls, v):
+        if len(set(v)) != len(v):
+            raise ValueError("product_ids must be unique — cannot compare a product with itself")
+        return v
 
 
 class TrendsRequest(BaseModel):
     """
     Query parameters for GET /trends
     """
-    product_id: int = Field(..., description="Product ID from database")
+    product_id: int = Field(
+        ...,
+        description="Product ID from the database"
+    )
     aspect: str = Field(
         ...,
-        description="Aspect to get trend for",
+        description="Aspect key to get trend for",
         example="battery"
     )
     weeks: int = Field(
         default=8,
         ge=1,
         le=52,
-        description="Number of weeks of history to return"
+        description="Number of weeks of review history to return"
+    )
+
+
+class SearchRequest(BaseModel):
+    """
+    Query parameters for GET /products/search
+    Allows the frontend to search available products in the DB
+    before submitting an AnalyzeRequest or CompareRequest.
+    """
+    query: str = Field(
+        ...,
+        min_length=2,
+        description="Partial product name to search for",
+        example="OnePlus"
+    )
+    platform: Optional[Platform] = Field(
+        None,
+        description="Filter by platform — omit to search both"
+    )
+    limit: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Max results to return"
     )

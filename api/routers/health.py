@@ -1,36 +1,69 @@
 """
 health.py
-GET /health — system status for uptime checks.
-GET /metrics — Prometheus-compatible metrics (added during the monitoring phase).
+GET /health — system status and sanity check.
+GET /metrics — Prometheus-compatible metrics (Phase 6).
+
+The /health endpoint also reports total products and reviews in DB
+as a quick sanity check that data_ingestion loaders have been run.
 """
 
-from fastapi import APIRouter, Depends
-from api.services.fake_detector import FakeReviewDetector
-from api.services.absa import ABSAInference
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy.orm import Session
+from sqlalchemy import text, func
 from api.schemas.response import HealthResponse
+from db.session import get_db
+from db.models import Product, Review
 import time
 
 router = APIRouter(prefix="/health", tags=["Health"])
 
-# Set in api/main.py at startup
-START_TIME = time.time()
+
+def get_fake_detector(request: Request):
+    return request.app.state.fake_detector
+
+
+def get_absa(request: Request):
+    return request.app.state.absa
 
 
 @router.get("/", response_model=HealthResponse)
 async def health(
-    fake_detector: FakeReviewDetector = Depends(),
-    absa: ABSAInference = Depends()
+    request: Request,
+    db: Session = Depends(get_db)
 ):
     """
-    Report service health: model versions, DB connectivity, uptime.
+    Report system health. Used by Docker health checks and monitoring.
 
     TODO:
-      1. status = "healthy" if DB connects and both models are loaded
-      2. fake_detector_version from FakeReviewDetector.model_version
-      3. absa_model_version from ABSAInference
-      4. database_connected = probe DB with a SELECT 1
-      5. uptime_seconds = time.time() - START_TIME
-      6. Build and return HealthResponse
+      1. Probe DB connectivity:
+         try:
+             db.execute(text("SELECT 1"))
+             database_connected = True
+         except Exception:
+             database_connected = False
+
+      2. Count products and reviews — quick data sanity check:
+         total_products = db.query(func.count(Product.id)).scalar()
+         total_reviews  = db.query(func.count(Review.id)).scalar()
+         Why: if these are 0, the data_ingestion loaders haven't run yet —
+         useful to surface this immediately rather than getting confusing
+         404s from /analyze.
+
+      3. Retrieve model versions from app.state:
+         fake_detector = request.app.state.fake_detector
+         absa = request.app.state.absa
+         status = "healthy" if database_connected and total_reviews > 0
+                  else "degraded"
+
+      4. Return HealthResponse(
+             status=status,
+             fake_detector_version=fake_detector.model_version,
+             absa_model_version="pyabsa-multilingual",
+             database_connected=database_connected,
+             uptime_seconds=time.time() - request.app.state.start_time,
+             total_products_in_db=total_products,
+             total_reviews_in_db=total_reviews
+         )
     """
     pass
 
@@ -39,14 +72,12 @@ async def health(
 async def metrics():
     """
     Expose Prometheus-compatible metrics.
+    Implemented in Phase 6 after the core pipeline works.
 
-    TODO:
-      1. Add prometheus-client to requirements
-      2. Instrument api.main with counters/histograms:
-         - requests per endpoint
-         - response latency (p50/p90/p99)
-         - model inference time
-         - fake review detection rate
-      3. Return generate_latest(REGISTRY) as plain text
+    TODO (Phase 6):
+      1. pip install prometheus-fastapi-instrumentator
+      2. Add Instrumentator().instrument(app).expose(app) in main.py lifespan
+      3. This endpoint then auto-returns Prometheus text format
+         — no manual implementation needed with the instrumentator
     """
-    pass
+    return {"message": "Metrics endpoint — implemented in Phase 6"}

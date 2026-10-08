@@ -16,8 +16,7 @@ load_dotenv()
 
 # Read from environment — set in .env or docker-compose.yml
 DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://reviewlens:password@localhost:5432/reviewlens"
+    "DATABASE_URL"
 )
 
 SQL_ECHO = os.getenv("SQL_ECHO", "False").lower() in ("true", "1", "yes")
@@ -74,6 +73,12 @@ def get_db():
           db.close()
     """
 
-    with SessionLocal.begin() as db:
-        yield db
+    db = SessionLocal()
+    try:
+      yield db
+    except Exception:
+      db.rollback()
+      raise
+    finally:
+      db.close()
 

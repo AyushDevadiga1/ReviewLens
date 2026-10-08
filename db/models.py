@@ -2,6 +2,7 @@ from sqlalchemy import (
     Column, Integer, String, Float, Boolean,
     DateTime, Text, ForeignKey, UniqueConstraint
 )
+from typing import Optional
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, mapped_column, Mapped
 from datetime import datetime
@@ -16,7 +17,7 @@ class Product(Base):
     id       : Mapped[int] = mapped_column(Integer, primary_key=True)
     name     : Mapped[str] = mapped_column(String(500), nullable=False)
     platform : Mapped[str] = mapped_column(String(50))
-    category : Mapped[str] = mapped_column(String(200))
+    category : Mapped[str] = mapped_column(String(200),nullable=True)
 
     reviews  : Mapped[list["Review"]] = relationship("Review", back_populates="product")
 
@@ -34,7 +35,7 @@ class Review(Base):
     reviewer_name     : Mapped[str]      = mapped_column(String(200))
     review_text       : Mapped[str]      = mapped_column(Text, nullable=False)
     review_date       : Mapped[datetime] = mapped_column(DateTime, nullable=True)
-    rating            : Mapped[float]    = mapped_column(Float, nullable=False)
+    rating            : Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     verified_purchase : Mapped[bool]     = mapped_column(Boolean, default=False)
     review_length     : Mapped[int]      = mapped_column(Integer, nullable=True)
 

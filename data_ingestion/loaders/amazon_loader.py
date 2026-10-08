@@ -12,7 +12,7 @@ Place at : data/Cell_Phones_and_Accessories_5.json.gz  (gitignored)
 McAuley column → ReviewLens schema mapping:
   asin          → used as product identifier to group reviews
   reviewText    → reviews.review_text  (cleaned via cleaner.py)
-  overall       → reviews.rating       (float 1.0–5.0)
+  overall       → reviews.rating       (float 1.0-5.0)
   reviewerName  → reviews.reviewer_name
   reviewTime    → reviews.review_date  (string "MM DD, YYYY" → datetime)
   verified      → reviews.verified_purchase (bool)
@@ -32,12 +32,14 @@ import argparse
 from datetime import datetime
 from typing import Iterator, Optional
 from data_ingestion.cleaner import clean_review_text, extract_review_metadata
+from db.session import get_session_factory
+from db.models import Product, Review
 
 
 # ── Parsing ────────────────────────────────────────────────────────────────────
 
 def stream_mcauley_file(filepath: str) -> Iterator[dict]:
-    """
+  """
     Stream reviews from the McAuley .json.gz file one at a time.
     Generator — never loads the full 300MB file into memory.
 
@@ -53,8 +55,19 @@ def stream_mcauley_file(filepath: str) -> Iterator[dict]:
       3. json.loads(line) — yield the result
       4. Wrap in try/except json.JSONDecodeError and skip bad lines
          (the dataset has ~0.1% malformed rows)
-    """
-    pass
+  """
+  if filepath.endswith('.gz'):
+    open_func = gzip.open(filepath, 'rb')
+    
+  else:
+    open_func = open(filepath, 'rb')
+
+    with open_func as f:
+      for line in f:
+        try:
+          yield json.loads(line.decode("utf-8"))
+        except json.JSONDecodeError:
+          continue
 
 
 def mcauley_to_reviewlens(raw: dict) -> Optional[dict]:
@@ -79,7 +92,25 @@ def mcauley_to_reviewlens(raw: dict) -> Optional[dict]:
          (used by load_amazon to group reviews under a Product row)
       5. Return the final dict
     """
-    pass
+    text = raw.get("reviewText") or raw.get("summary","")
+  
+    input_dict = {
+      "text":text,
+      "rating":raw.get("overall"),
+      "reviewer":raw.get("reviewerName",""),
+      "date":raw.get("reviewTime",""), # Fallback if the date does not exist in the passed dict
+      "verified":raw.get("verified",False)
+    }
+
+    normalised_data = extract_review_metadata(input_dict)
+    
+    if not normalised_data["review_text"] or not normalised_data.get("review_text"):
+      return None
+
+    final_dict = dict(normalised_data)
+    final_dict["product_identifier"] = raw.get("asin")
+    return final_dict
+
 
 
 # ── DB writing ─────────────────────────────────────────────────────────────────
@@ -113,7 +144,101 @@ def load_amazon(filepath: str, limit: int = None) -> None:
       - The limit applies to the number of reviews mapped, not lines read
         (some lines are skipped due to missing text)
     """
-    pass
+
+    # 1. Base Variables Init
+    db = get_session_factory()
+    session = db()
+    product_cache = {}  # Format: {asin: product_id}
+    seen_reviews = {}  # Format: {asin: set((reviewer_name, review_text))} — skips rows on re-runs
+    review_count = 0
+    
+    # 2. Master Safety Fence Opens
+    try:
+        for raw in stream_mcauley_file(filepath):
+            if limit is not None and review_count >= limit:
+                break
+
+            mapping = mcauley_to_reviewlens(raw)
+            if mapping is None:
+                continue
+
+            # Extract product identifier matching the dict keys from step 4
+            asin = mapping.get("product_identifier")
+            if not asin:
+                continue
+
+            # b. Get-or-create Product row using the in-memory cache
+            if asin not in product_cache:
+                product = (
+                    session.query(Product)
+                    .filter(Product.name == asin, Product.platform == "amazon")
+                    .first()
+                )
+                
+                # If it doesn't exist, build and persist it immediately to get an ID
+                if not product:
+                    product = Product(
+                        name=asin,
+                        platform="amazon"
+                        # Set other Product fields from mapping if needed (e.g., title)
+                    )
+                    session.add(product)
+                    session.flush()  # Generates product.id without committing the transaction
+                
+                # Cache the ID to skip DB lookups for future reviews of this item
+                product_cache[asin] = product.id
+
+                # Idempotency: snapshot (reviewer, text) pairs already stored for
+                # this product (one query per product, not per review).
+                # Re-running the loader — or duplicated rows in the source
+                # file — can no longer multiply review rows and corrupt
+                # aggregation. Keyed on reviewer+text so two users posting
+                # the same words are still kept as separate reviews.
+                seen_reviews[asin] = {
+                    (r, t) for (r, t) in session.query(
+                        Review.reviewer_name, Review.review_text).filter(
+                        Review.product_id == product.id).all()
+                }
+
+            # c1. Skip reviews already in the DB from a previous load
+            review_key = (mapping.get("reviewer_name"), mapping.get("review_text"))
+            if review_key in seen_reviews[asin]:
+                continue
+            seen_reviews[asin].add(review_key)
+
+            # c2. Build the Review ORM object
+            review = Review(
+                                product_id        = product_cache[asin],
+                                reviewer_name     = mapping.get("reviewer_name"),    
+                                review_text       = mapping.get("review_text"),      
+                                review_date       = mapping.get("review_date"),
+                                rating            = mapping.get("rating"),           
+                                verified_purchase = mapping.get("verified_purchase"),
+                                review_length     = mapping.get("review_length")     
+                            )
+
+            
+            # d. Add review to session and increment count
+            session.add(review)
+            review_count += 1
+            
+            # e. Every 1,000 rows: batch commit changes to the DB
+            if review_count % 1000 == 0:
+                session.commit()
+                print(f"[Amazon] Processed {review_count} reviews...")
+                
+        # 3. Final Catch-all Commit sits inside the try, right after the loop finishes
+        session.commit()
+        
+    except Exception as e:
+        session.rollback()
+        print(f"[Amazon Error] Pipeline failed. Rolled back transaction. Error: {e}")
+        raise e
+    finally:
+        session.close()
+        
+    # 4. Print Summary out here after successful execution and session closure
+    print(f"Loaded {review_count} reviews across {len(product_cache)} products")
 
 
 if __name__ == "__main__":

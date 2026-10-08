@@ -1,0 +1,66 @@
+# ── Python ─────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# ── Virtual environment ─────────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── Data files — never go into the image ───────────────────────────────────────
+# Datasets are loaded into PostgreSQL via data_ingestion/ loaders.
+# The image has no reason to contain raw data files.
+data/
+
+# ── ML model artifacts — mounted as a volume, not baked in ─────────────────────
+# ml/fake_review/model/ is mounted via docker-compose volumes:
+#   - ./ml:/app/ml
+# Baking them in would bloat the image and make retraining pointless.
+ml/fake_review/model/*.pkl
+ml/fake_review/model/*.json
+mlruns/
+mlflow.db
+
+# ── EDA notebooks — dev only ────────────────────────────────────────────────────
+eda/
+
+# ── Secrets ─────────────────────────────────────────────────────────────────────
+.env
+# .env.example is intentionally NOT ignored — it documents required vars
+
+# ── Git ─────────────────────────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── Editor / OS ─────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.qodo/
+.opencode/
+.DS_Store
+Thumbs.db
+
+# ── Tests — not needed at runtime ───────────────────────────────────────────────
+tests/
+.pytest_cache/
+
+# ── Docs — not needed at runtime ────────────────────────────────────────────────
+docs/
+
+# ── Docker files themselves ──────────────────────────────────────────────────────
+Dockerfile*
+docker-compose.yml
+.dockerignore
+
+# ── Monitoring config — mounted as volume in compose ────────────────────────────
+monitoring/
+
+# ── Misc dev artifacts ───────────────────────────────────────────────────────────
+*.log
+*.db
+alembic.ini
+pyproject.toml
+README.md

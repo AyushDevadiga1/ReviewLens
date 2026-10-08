@@ -17,8 +17,9 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://reviewlens:password@db:5432/reviewlens
+      - DATABASE_URL=postgresql://reviewlens:${POSTGRES_PASSWORD}@db:5432/reviewlens
       - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - GIT_PYTHON_REFRESH=quiet
     depends_on:
       db:
         condition: service_healthy
@@ -35,34 +36,36 @@ services:
   db:
     image: postgres:15-alpine
     environment:
-      - POSTGRES_USER=reviewlens
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=reviewlens
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U reviewlens"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   # ── MLflow experiment tracking ──────────────────────────────────────
   mlflow:
-    image: python:3.11-slim
+    image: ghcr.io/mlflow/mlflow:v2.16.0
     ports:
       - "5000:5000"
     volumes:
       - mlflow_data:/mlflow
+    environment:
+      - MLFLOW_DISABLE_SECURITY_ENFORCEMENT=true
+      - MLFLOW_SERVER_GUNICORN_OPTS=--bind 0.0.0.0:5000
     command: >
-      bash -c "pip install --quiet mlflow &&
-               mlflow server
-               --host 0.0.0.0
-               --port 5000
-               --backend-store-uri sqlite:////mlflow/mlflow.db
-               --default-artifact-root /mlflow/artifacts"
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
     restart: unless-stopped
 
   # ── Streamlit frontend ──────────────────────────────────────────────

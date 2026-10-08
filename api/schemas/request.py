@@ -36,18 +36,25 @@ class AnalyzeRequest(BaseModel):
         min_length=2,
         max_length=500,
         description="Product name as stored in the database",
-        example="OnePlus Nord CE 3 Lite 5G"
+        examples=["OnePlus Nord CE 3 Lite 5G"]
     )
     platform: Optional[Platform] = Field(
         None,
         description="Platform the product is from — required when product_name is provided",
-        example="amazon"
+        examples=["amazon"]
     )
     review_text: Optional[str] = Field(
         None,
         min_length=20,
         max_length=5000,
         description="Single review text to analyze directly — skips DB lookup"
+    )
+    rating: Optional[float] = Field(
+        None,
+        ge=1.0,
+        le=5.0,
+        description="Star rating for single-review mode — feeds fake detection",
+        examples=[5.0]
     )
 
     @validator("review_text", always=True)
@@ -71,9 +78,9 @@ class CompareRequest(BaseModel):
     """
     product_ids: List[int] = Field(
         ...,
-        min_items=2,
-        max_items=3,
-        description="List of 2–3 product IDs from the database to compare"
+        min_length=2,
+        max_length=3,
+        description="List of 2-3 product IDs from the database to compare"
     )
 
     @validator("product_ids")
@@ -94,7 +101,7 @@ class TrendsRequest(BaseModel):
     aspect: str = Field(
         ...,
         description="Aspect key to get trend for",
-        example="battery"
+        examples=["battery"]
     )
     weeks: int = Field(
         default=8,
@@ -114,7 +121,7 @@ class SearchRequest(BaseModel):
         ...,
         min_length=2,
         description="Partial product name to search for",
-        example="OnePlus"
+        examples=["OnePlus"]
     )
     platform: Optional[Platform] = Field(
         None,

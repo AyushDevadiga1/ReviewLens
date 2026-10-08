@@ -1,3 +1,5 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 # API
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
@@ -18,6 +20,14 @@ torch==2.1.1
 
 # ML — ABSA
 pyabsa==2.3.3
+# Pinned: metric-visualizer calls UpdateChecker.check(name, version)
+# POSITIONALLY, but update-checker>=0.18 made those args keyword-only
+# (TypeError at import -> uvicorn crash-loop). 0.17 keeps the old
+# positional API, so this pin works with every metric-visualizer variant.
+# (The dev venv only survives 1.0.0 because its mv copy carries a local
+# try/except patch — NOT reproducible from a clean PyPI install.)
+metric-visualizer==0.9.6
+update-checker==0.17
 
 # Scraping
 requests==2.31.0

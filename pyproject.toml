@@ -6,7 +6,7 @@ target-version = "py311"
 line-length = 88
 
 # Folders ruff should check
-src = ["api", "ml", "scraper", "db", "frontend", "tests"]
+src = ["api", "ml", "data_ingestion", "db", "frontend", "tests"]
 
 # Exclude generated/vendor directories
 exclude = [
@@ -36,7 +36,7 @@ ignore = [
 
 [tool.ruff.lint.isort]
 # Keep first-party imports grouped together
-known-first-party = ["api", "db", "ml", "scraper", "frontend"]
+known-first-party = ["api", "db", "ml", "data_ingestion", "frontend"]
 
 [tool.ruff.format]
 # Use double quotes everywhere
@@ -47,4 +47,4 @@ indent-style = "space"
 # Where pytest looks for tests
 testpaths = ["tests"]
 # Show short traceback for cleaner CI output
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --continue-on-collection-errors"

@@ -30,7 +30,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
           )
           app.state.limiter = self.limiter
         """
-        pass
+        
+        super().__init__(app)
+
+        self.limiter = Limiter(
+            key_func=get_remote_address,
+            default_limits=[f"{max_requests}/{window_seconds}minute"]
+        )
+        app.state.limiter = self.limiter
 
     async def dispatch(self, request: Request, call_next):
         """
@@ -42,4 +49,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
           3. Check limiter window; if exceeded return 429 JSONResponse
           4. Otherwise: call_next(request)
         """
-        pass
+        
+        if request.url.path.startswith("/health"):
+          return await call_next(request)
+
+        limit_key = request.headers.get("X-API-Key")
+
+        if not limit_key:
+          limit_key = get_remote_address(request)
+
+        if not self.limiter.hit(limit_key):
+          return JSONResponse(
+              status_code=429,
+              content={"detail": "Too many requests. Please try again later."}
+          )
+
+        return await call_next(request)

@@ -30,7 +30,12 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
           self.api_key_hash = hashlib.sha256(
               os.getenv(API_KEY_SECRET_ENV, "change-me").encode()).hexdigest()
         """
-        pass
+        
+        super().__init__(app)
+
+        self.api_key_hash = hashlib.sha256(
+            os.getenv(API_KEY_SECRET_ENV, "change-me").encode()
+        ).hexdigest()
 
     async def dispatch(self, request: Request, call_next):
         """
@@ -43,4 +48,21 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
           4. On mismatch: return JSONResponse 401 "Invalid API key"
           5. Otherwise: call_next(request)
         """
-        pass
+        
+        if request.url.path.startswith("/health"):
+          return await call_next(request)
+
+        api_key = request.headers.get("X-API-Key")
+        if not api_key:
+          return JSONResponse(
+              status_code=401,
+              content={"detail": "Missing X-API-Key header"}
+          )
+
+        if not hmac.compare_digest(hashlib.sha256(api_key.encode()).hexdigest(), self.api_key_hash):
+          return JSONResponse(
+              status_code=401,
+              content={"detail": "Invalid API key"}
+          )
+
+        return await call_next(request)

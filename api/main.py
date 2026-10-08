@@ -16,6 +16,8 @@ from contextlib import asynccontextmanager
 from api.routers import analyze, compare, trends, health, products
 from api.services.fake_detector import FakeReviewDetector
 from api.services.absa import ABSAInference
+from api.middleware.auth import APIKeyMiddleware
+from api.middleware.rate_limit import RateLimitMiddleware
 from db.session import create_tables
 import time
 
@@ -87,11 +89,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# TODO: uncomment when auth is implemented
-# app.add_middleware(APIKeyMiddleware)
-
-# TODO: uncomment when rate limiting is implemented
-# app.add_middleware(RateLimitMiddleware, max_requests=100, window_seconds=60)
+# Auth + rate limiting. Starlette runs LAST-added FIRST, so auth checks
+# each request before it can consume rate-limit budget. Both skip /health.
+app.add_middleware(RateLimitMiddleware, max_requests=100, window_seconds=60)
+app.add_middleware(APIKeyMiddleware)
 
 # Register all routers
 app.include_router(analyze.router)

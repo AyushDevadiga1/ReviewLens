@@ -9,6 +9,7 @@ Policy: 100 requests / minute / key.
 import os
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
+from limits import parse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -37,7 +38,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             key_func=get_remote_address,
             default_limits=[f"{max_requests}/{window_seconds}minute"]
         )
-        app.state.limiter = self.limiter
+        # NOTE: no app.state here — a middleware's `app` arg is the NEXT
+        # app down the stack (e.g. CORSMiddleware), not the FastAPI app,
+        # so it has no .state. The limiter lives on self; dispatch uses
+        # self.limiter.limiter (the underlying `limits` engine) directly.
+
+        # Limiter itself exposes no .hit() — enforcement goes through its
+        # underlying `limits` engine: hit(parsed_limit, key) -> bool.
+        # Parsed once here so a bad limit string fails at startup, not per request.
+        limit_str = (
+            f"{max_requests}/minute"
+            if window_seconds == 60
+            else f"{max_requests} per {window_seconds} seconds"
+        )
+        self._parsed_limit = parse(limit_str)
 
     async def dispatch(self, request: Request, call_next):
         """
@@ -58,7 +72,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not limit_key:
           limit_key = get_remote_address(request)
 
-        if not self.limiter.hit(limit_key):
+        if not self.limiter.limiter.hit(self._parsed_limit, limit_key):
           return JSONResponse(
               status_code=429,
               content={"detail": "Too many requests. Please try again later."}

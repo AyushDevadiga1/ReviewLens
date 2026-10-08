@@ -34,7 +34,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
 
         self.api_key_hash = hashlib.sha256(
-            os.getenv(API_KEY_SECRET_ENV, "change-me").encode()
+            os.getenv(self.API_KEY_SECRET_ENV, "change-me").encode()
         ).hexdigest()
 
     async def dispatch(self, request: Request, call_next):

@@ -20,6 +20,7 @@ services:
       - DATABASE_URL=postgresql://reviewlens:${POSTGRES_PASSWORD}@db:5432/reviewlens
       - MLFLOW_TRACKING_URI=http://mlflow:5000
       - GIT_PYTHON_REFRESH=quiet
+      - API_KEY_SECRET=${API_KEY_SECRET}
     depends_on:
       db:
         condition: service_healthy

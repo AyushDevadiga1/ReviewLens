@@ -17,112 +17,199 @@ Two modes:
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from datetime import datetime
+from typing import List
 from api.schemas.request import AnalyzeRequest
-from api.schemas.response import AnalyzeResponse, ReviewFilterSummary
+from api.schemas.response import AnalyzeResponse, ReviewFilterSummary, AspectScore
 from api.services.fake_detector import FakeReviewDetector
 from api.services.absa import ABSAInference
 from api.services.aggregator import aggregate_product_aspects
 from db.session import get_db
 from db.models import Product, Review, FakeScore, AspectSentiment
+from ml.absa.aspects import ASPECTS
 
 router = APIRouter(prefix="/analyze", tags=["Analysis"])
 
 
 def get_fake_detector(request: Request) -> FakeReviewDetector:
-    """Retrieve the FakeReviewDetector singleton from app.state."""
     return request.app.state.fake_detector
 
 
 def get_absa(request: Request) -> ABSAInference:
-    """Retrieve the ABSAInference singleton from app.state."""
     return request.app.state.absa
+
+
+def build_aspect_scores(aspect_scores: dict) -> List[AspectScore]:
+    """
+    Convert aggregator output dict to list of AspectScore response objects.
+    Adds display_name from aspects.py config.
+    """
+    result = []
+    for aspect_key, data in aspect_scores.items():
+        display_name = ASPECTS.get(aspect_key, {}).get("display_name", aspect_key.title())
+        result.append(AspectScore(
+            aspect=aspect_key,
+            display_name=display_name,
+            mean_score=data["mean_score"],
+            review_count=data["review_count"],
+            positive_pct=data["positive_pct"],
+            negative_pct=data["negative_pct"],
+            neutral_pct=data["neutral_pct"],
+            sentiment_label=data["sentiment_label"],
+        ))
+    return result
 
 
 @router.post("/", response_model=AnalyzeResponse)
 async def analyze_product(
-    request: AnalyzeRequest,
+    body: AnalyzeRequest,
     db: Session = Depends(get_db),
     fake_detector: FakeReviewDetector = Depends(get_fake_detector),
     absa: ABSAInference = Depends(get_absa)
 ):
-    """
-    Run fake detection + ABSA on a product's reviews from the database,
-    or analyze a single review text directly.
+    # ── Mode 2 — single review_text, no DB lookup ──────────────────────────────
+    if body.review_text and not body.product_name:
+        fake_result = fake_detector.predict_single(
+            body.review_text, body.rating if body.rating is not None else 4.0
+        )
 
-    Mode 1 — product_name + platform (full pipeline):
-    1. Look up product in DB by name + platform
-    2. Fetch all its Review rows
-    3. Run fake_detector.predict_batch() on all review texts
-    4. Filter to genuine reviews only
-    5. Run absa.analyze_batch() on genuine review texts
-    6. Store FakeScore + AspectSentiment rows back to DB
-    7. Aggregate aspect scores
-    8. Return AnalyzeResponse
+        if fake_result.is_fake:
+            return AnalyzeResponse(
+                product_id=0,
+                product_name="Single Review",
+                platform="unknown",
+                review_filter=ReviewFilterSummary(
+                    total_reviews=1,
+                    fake_count=1,
+                    genuine_count=0,
+                    fake_percentage=100.0
+                ),
+                aspects=[],
+                analyzed_at=datetime.utcnow()
+            )
 
-    Mode 2 — review_text only (single review):
-    1. Run fake_detector.predict_single() on the text
-    2. If genuine: run absa.analyze_review() on the text
-    3. Return AnalyzeResponse with single-review results (no DB write)
+        absa_result = absa.analyze_review(body.review_text)
+        aspects = getattr(absa_result,"aspects",[]) or []
+        aspect_dicts = [
+            {"aspect": a.aspect, "sentiment": a.sentiment,
+             "confidence": a.confidence, "review_date": datetime.utcnow()}
+            for a in aspects
+        ]
+        aspect_scores = aggregate_product_aspects(aspect_dicts)
 
-    TODO:
-      Mode 1:
-        1. product = db.query(Product).filter(
-               Product.name == request.product_name,
-               Product.platform == request.platform
-           ).first()
-           Raise HTTPException(404) if not found —
-           message: f"Product '{request.product_name}' not found on {request.platform}.
-                      Run data_ingestion loaders first."
+        return AnalyzeResponse(
+            product_id=0,
+            product_name="Single Review",
+            platform="unknown",
+            review_filter=ReviewFilterSummary(
+                total_reviews=1,
+                fake_count=0,
+                genuine_count=1,
+                fake_percentage=0.0
+            ),
+            aspects=build_aspect_scores(aspect_scores),
+            analyzed_at=datetime.utcnow()
+        )
 
-        2. reviews = db.query(Review).filter(
-               Review.product_id == product.id
-           ).all()
-           Raise HTTPException(404) if no reviews —
-           message: "No reviews found for this product in the database."
+    # ── Mode 1 — full product pipeline ────────────────────────────────────────
+    product = db.query(Product).filter(
+        Product.name == body.product_name,
+        Product.platform == body.platform
+    ).first()
 
-        3. review_texts = [r.review_text for r in reviews]
-           fake_results = fake_detector.predict_batch(review_texts)
+    if not product:
+        raise HTTPException(
+            404,
+            f"Product '{body.product_name}' not found on {body.platform}. "
+            "Run data_ingestion loaders first."
+        )
 
-        4. genuine_reviews = fake_detector.filter_genuine(reviews, fake_results)
-           Raise HTTPException(422) if len(genuine_reviews) == 0 —
-           message: "All reviews for this product were flagged as fake."
+    reviews = db.query(Review).filter(Review.product_id == product.id).all()
 
-        5. Store FakeScore rows:
-           For each (review, result) in zip(reviews, fake_results):
-             existing = db.query(FakeScore).filter(FakeScore.review_id == review.id).first()
-             if not existing:
-               db.add(FakeScore(review_id=review.id, is_fake=result.is_fake,
-                                confidence=result.confidence,
-                                model_version=result.model_version))
-           db.commit()
+    if not reviews:
+        raise HTTPException(404, "No reviews found for this product in the database.")
 
-        6. genuine_texts = [r.review_text for r in genuine_reviews]
-           absa_results = absa.analyze_batch(genuine_texts)
+    # ── Extract everything from ORM objects BEFORE any commit ──────────────────
+    # After db.commit(), SQLAlchemy expires ORM objects. Accessing attributes
+    # on expired objects triggers a lazy reload which fails if the session
+    # transaction is in a broken state. Extract to plain Python first.
+    review_ids   = [r.id for r in reviews]
+    review_texts = [r.review_text for r in reviews]
+    review_ratings = [r.rating or 4.0 for r in reviews]
 
-        7. Store AspectSentiment rows:
-           For each (review, result) in zip(genuine_reviews, absa_results):
-             For each aspect_mention in result:
-               db.add(AspectSentiment(review_id=review.id,
-                                      aspect=aspect_mention.aspect,
-                                      sentiment=aspect_mention.sentiment,
-                                      confidence=aspect_mention.confidence,
-                                      model_version="pyabsa-multilingual"))
-           db.commit()
+    # ── Fake detection ─────────────────────────────────────────────────────────
+    fake_results = fake_detector.predict_batch(review_texts, review_ratings)
 
-        8. aspect_rows = db.query(AspectSentiment).join(Review).filter(
-               Review.product_id == product.id
-           ).all()
-           aspect_dicts = [{"aspect": a.aspect, "sentiment": a.sentiment,
-                            "confidence": a.confidence,
-                            "review_date": a.scored_at} for a in aspect_rows]
-           aspect_scores = aggregate_product_aspects(aspect_dicts)
+    genuine_indices = [i for i, res in enumerate(fake_results) if not res.is_fake]
+    genuine_count   = len(genuine_indices)
+    fake_count      = len(reviews) - genuine_count
 
-        9. Build ReviewFilterSummary and AnalyzeResponse, return
+    if genuine_count == 0:
+        raise HTTPException(422, "All reviews for this product were flagged as fake.")
 
-      Mode 2 (review_text only):
-        1. fake_result = fake_detector.predict_single(request.review_text)
-        2. If fake_result.is_fake: return minimal AnalyzeResponse flagging as fake
-        3. absa_result = absa.analyze_review(request.review_text)
-        4. aggregate and return — no DB writes for single-review mode
-    """
-    pass
+    genuine_texts = [review_texts[i] for i in genuine_indices]
+    genuine_ids   = [review_ids[i] for i in genuine_indices]
+
+    # ── Store FakeScore rows ───────────────────────────────────────────────────
+    for i, result in enumerate(fake_results):
+        existing = db.query(FakeScore).filter(
+            FakeScore.review_id == review_ids[i]
+        ).first()
+        if not existing:
+            db.add(FakeScore(
+                review_id=review_ids[i],
+                is_fake=result.is_fake,
+                confidence=result.confidence,
+                model_version=result.model_version
+            ))
+    db.commit()
+
+    # ── ABSA on genuine reviews ────────────────────────────────────────────────
+    absa_results = absa.analyze_batch(genuine_texts)
+
+    # ── Store AspectSentiment rows ─────────────────────────────────────────────
+    # Dedup on (review_id, aspect, sentiment) — same pattern as FakeScore above.
+    # Re-analyzing a product must not multiply aspect mentions in aggregation.
+    for review_id, absa_result in zip(genuine_ids, absa_results):
+        aspects = getattr(absa_result,"aspects",[]) or []
+        for aspect_mention in aspects:
+            existing_aspect = db.query(AspectSentiment).filter(
+                AspectSentiment.review_id == review_id,
+                AspectSentiment.aspect == aspect_mention.aspect,
+                AspectSentiment.sentiment == aspect_mention.sentiment
+            ).first()
+            if not existing_aspect:
+                db.add(AspectSentiment(
+                    review_id=review_id,
+                    aspect=aspect_mention.aspect,
+                    sentiment=aspect_mention.sentiment,
+                    confidence=aspect_mention.confidence,
+                    model_version="pyabsa-multilingual"
+                ))
+    db.commit()
+
+    # ── Aggregate aspect scores ────────────────────────────────────────────────
+    aspect_rows = db.query(AspectSentiment).join(Review).filter(
+        Review.product_id == product.id
+    ).all()
+
+    aspect_dicts = [
+        {"aspect": a.aspect, "sentiment": a.sentiment,
+         "confidence": a.confidence, "review_date": a.scored_at}
+        for a in aspect_rows
+    ]
+    aspect_scores = aggregate_product_aspects(aspect_dicts)
+
+    # ── Build and return response ──────────────────────────────────────────────
+    return AnalyzeResponse(
+        product_id=product.id,
+        product_name=product.name,
+        platform=product.platform,
+        review_filter=ReviewFilterSummary(
+            total_reviews=len(reviews),
+            fake_count=fake_count,
+            genuine_count=genuine_count,
+            fake_percentage=round(fake_count / len(reviews) * 100, 2)
+        ),
+        aspects=build_aspect_scores(aspect_scores),
+        analyzed_at=datetime.utcnow()
+    )

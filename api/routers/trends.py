@@ -73,4 +73,55 @@ async def get_trend(
              overall_direction=overall_direction
          )
     """
-    pass
+    
+    product = db.query(Product).filter(Product.id == request.product_id).first()
+    if not product:
+        raise HTTPException(404, f"Product with ID {request.product_id} not found.")
+
+    if request.aspect not in ASPECTS:
+        raise HTTPException(400, f"Unknown aspect '{request.aspect}'. Valid aspects: {list(ASPECTS.keys())}")
+
+    aspect_rows = db.query(
+        AspectSentiment,
+        Review.review_date
+    ).join(Review).filter(
+        Review.product_id == request.product_id,
+        AspectSentiment.aspect == request.aspect
+    ).all()
+
+    if not aspect_rows:
+        raise HTTPException(404, f"No '{request.aspect}' sentiment data found for '{product.name}'. Run POST /analyze first.")
+
+    aspect_dicts = []
+    for sentiment_row, review_date in aspect_rows:
+        use_date = review_date if review_date else sentiment_row.scored_at
+        aspect_dicts.append({
+            "aspect": sentiment_row.aspect,
+            "sentiment": sentiment_row.sentiment,
+            "confidence": sentiment_row.confidence,
+            "review_date": use_date
+        })
+
+    trend = compute_weekly_trend(aspect_dicts, request.aspect, request.weeks)
+
+    if not trend:
+        raise HTTPException(404, "Could not compute trend. Check if there are enough reviews with dates.")
+
+    first_score = trend[0]["mean_score"]
+    last_score = trend[-1]["mean_score"]
+
+    if last_score - first_score > 0.5:
+        overall_direction = "improving"
+    elif first_score - last_score > 0.5:
+        overall_direction = "declining"
+    else:
+        overall_direction = "stable"
+
+    return TrendsResponse(
+        product_id=product.id,
+        product_name=product.name,
+        aspect=request.aspect,
+        display_name=ASPECTS[request.aspect]["display_name"],
+        trend=trend,
+        overall_direction=overall_direction
+    )

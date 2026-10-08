@@ -54,7 +54,28 @@ async def search_products(
                                      review_count=r.review_count)
                  for r in results]
     """
-    pass
+    
+    query = db.query(
+        Product.id,
+        Product.name,
+        Product.platform,
+        func.count(Review.id).label("review_count")
+    ).outerjoin(Review, Review.product_id == Product.id)\
+     .filter(Product.name.ilike(f"%{request.query}%"))\
+     .group_by(Product.id, Product.name, Product.platform)
+    
+    if request.platform:
+        query = query.filter(Product.platform == request.platform)
+
+    results = query.limit(request.limit).all()
+    
+    if not results:
+        raise HTTPException(404, f"No products matching '{request.query}' found in database.")
+    
+    return [ProductSearchResult(product_id=r.id, product_name=r.name,
+                                 platform=r.platform,
+                                 review_count=r.review_count)
+            for r in results]
 
 
 @router.get("/", response_model=List[ProductSearchResult])
@@ -76,4 +97,26 @@ async def list_products(
       3. results = query.order_by(func.count(Review.id).desc()).limit(limit).all()
       4. Return list of ProductSearchResult
     """
-    pass
+    
+    query = db.query(
+        Product.id,
+        Product.name,
+        Product.platform,
+        func.count(Review.id).label("review_count")
+    ).outerjoin(Review)\
+     .group_by(Product.id)
+    
+    if platform:
+        query = query.filter(Product.platform == platform)
+    
+    results = query.order_by(func.count(Review.id).desc()).limit(limit).all()
+    
+    return [
+        ProductSearchResult(
+            product_id=r.id, 
+            product_name=r.name,
+            platform=r.platform,
+            review_count=r.review_count
+        )
+        for r in results
+    ]

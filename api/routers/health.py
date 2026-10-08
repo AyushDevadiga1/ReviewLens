@@ -65,11 +65,37 @@ async def health(
              total_reviews_in_db=total_reviews
          )
     """
-    pass
+    
+    try:
+        db.execute(text("SELECT 1"))
+        database_connected = True
+        total_products = db.query(func.count(Product.id)).scalar()
+        total_reviews  = db.query(func.count(Review.id)).scalar()
+    except Exception:
+        database_connected = False
+        total_products = 0
+        total_reviews  = 0
+
+    fake_detector = request.app.state.fake_detector
+    absa = request.app.state.absa
+    
+    status = "healthy" if database_connected and total_reviews > 0 else "degraded"
+    
+    return HealthResponse(
+        status=status,
+        fake_detector_version=fake_detector.model_version,
+        absa_model_version="pyabsa-multilingual",
+        database_connected=database_connected,
+        uptime_seconds=time.time() - request.app.state.start_time,
+        total_products_in_db=total_products,
+        total_reviews_in_db=total_reviews
+    )
 
 
 @router.get("/metrics")
-async def metrics():
+async def metrics(
+    request : Request
+):
     """
     Expose Prometheus-compatible metrics.
     Implemented in Phase 6 after the core pipeline works.
@@ -80,4 +106,12 @@ async def metrics():
       3. This endpoint then auto-returns Prometheus text format
          — no manual implementation needed with the instrumentator
     """
-    return {"message": "Metrics endpoint — implemented in Phase 6"}
+
+    metrics_data = getattr(request.app.state,"prometheus_metrics",None)
+    
+    if metrics_data is None:
+        return {
+            "Message" : "Metrics endpoint not implemented yet"
+        }
+    
+    return metrics_data

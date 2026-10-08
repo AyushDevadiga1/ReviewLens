@@ -44,16 +44,41 @@ class ABSAInference:
         Load PyABSA sentiment analyser.
         Model is downloaded automatically on first run.
 
-        TODO:
-          self.sentiment_analyser = pyabsa.AspectTermExtraction.SentimentClassifier(
-              checkpoint='multilingual',  # works for English and mixed text
-              auto_device=True            # uses GPU if available, else CPU
-          )
+        Uses AspectExtractor — present in both pyabsa 2.3.x (pinned for
+        Docker) and 2.4.x (dev venv) — instead of SentimentClassifier,
+        which only exists on 2.4.x and broke the container import chain.
         """
-        self.sentiment_analyzer = ATEPC.SentimentClassifier(
+        self.sentiment_analyzer = ATEPC.AspectExtractor(
               checkpoint='multilingual',
               auto_device=False
           )
+
+    def _build_aspect_results(self, aspects, sentiments, confidences) -> List[AspectResult]:
+        """
+        Single parse contract for one model's raw output triple.
+
+        Tolerates version drift: sentiments arrive capitalised
+        ('Positive') and confidence may be a flat list of floats
+        ('confidence' key) or per-aspect probability vectors
+        ('probs' key) — confidence is then max(prob_vector),
+        independent of class ordering.
+        """
+        aspect_results = []
+        for i, aspect in enumerate(aspects or []):
+            raw_sent = sentiments[i] if i < len(sentiments or []) else "neutral"
+            sentiment = str(raw_sent).strip().lower()
+
+            conf = 0.5
+            if i < len(confidences or []):
+                c = confidences[i]
+                conf = float(max(c)) if isinstance(c, (list, tuple)) else float(c)
+
+            aspect_results.append(AspectResult(
+                aspect=self.map_aspect_to_canonical(aspect),
+                sentiment=sentiment,
+                confidence=conf
+            ))
+        return aspect_results
 
     def analyze_review(self, review_text: str) -> ReviewABSAResult:
         """
@@ -76,23 +101,16 @@ class ABSAInference:
         
         result = self.sentiment_analyzer.predict(review_text)
 
-        aspects = result.get('aspect', [])
-        sentiments = result.get('sentiment', [])
-        confidences = result.get('confidence', [])
+        # 2.3.x returns one dict for a single text; tolerate list-wrapped
+        # results so a minor-version shape change degrades instead of 500s.
+        if isinstance(result, list):
+            result = result[0] if result else {}
 
-        aspect_results = []
+        aspects = result.get('aspect', []) or []
+        sentiments = result.get('sentiment', []) or []
+        confidences = result.get('confidence', None) or result.get('probs', []) or []
 
-        for aspect, sentiment, confidence in zip(aspects, sentiments, confidences):
-
-            canonical_name = self.map_aspect_to_canonical(aspect)
-            
-            # Build the individual AspectResult item
-            aspect_item = AspectResult(
-                aspect=canonical_name,
-                sentiment=sentiment,
-                confidence=float(confidence)
-            )
-            aspect_results.append(aspect_item)
+        aspect_results = self._build_aspect_results(aspects, sentiments, confidences)
             
         return ReviewABSAResult(review_text=review_text, aspects=aspect_results)
 
@@ -116,22 +134,11 @@ class ABSAInference:
         # Parse the results list into List[ReviewABSAResult]
         
         for text, res in zip(review_texts, results):
-            aspects = res.get('aspect', [])
-            sentiments = res.get('sentiment', [])
-            confidences = res.get('confidence', [])
+            aspects = res.get('aspect', []) or []
+            sentiments = res.get('sentiment', []) or []
+            confidences = res.get('confidence', None) or res.get('probs', []) or []
             
-            aspect_results = []
-            
-            for aspect, sentiment, confidence in zip(aspects, sentiments, confidences):
-                # FIX: Use the mapping logic method consistently here too
-                canonical_name = self.map_aspect_to_canonical(aspect)
-                
-                aspect_item = AspectResult(
-                    aspect=canonical_name,
-                    sentiment=sentiment,
-                    confidence=float(confidence)
-                )
-                aspect_results.append(aspect_item)
+            aspect_results = self._build_aspect_results(aspects, sentiments, confidences)
                 
             parsed_batch.append(ReviewABSAResult(review_text=text, aspects=aspect_results))
             

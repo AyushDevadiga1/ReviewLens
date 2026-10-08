@@ -9,9 +9,16 @@ Model downloads automatically on first run (~500MB, cached after).
 
 from typing import List, Dict
 from dataclasses import dataclass
-import pyabsa
-from aspects import ASPECT_NAMES
 
+import os
+os.environ["PYABSA_DISABLE_CUDNN"] = "1"
+os.environ["AUTO_DEVICE"] = "False"
+
+import warnings
+warnings.filterwarnings("ignore")
+from pyabsa import AspectTermExtraction as ATEPC
+
+from ml.absa.aspects import ASPECTS
 
 @dataclass
 class AspectResult:
@@ -43,7 +50,10 @@ class ABSAInference:
               auto_device=True            # uses GPU if available, else CPU
           )
         """
-        pass
+        self.sentiment_analyzer = ATEPC.SentimentClassifier(
+              checkpoint='multilingual',
+              auto_device=False
+          )
 
     def analyze_review(self, review_text: str) -> ReviewABSAResult:
         """
@@ -63,7 +73,28 @@ class ABSAInference:
              e.g. "battery life" → "battery", "cam" → "camera"
           4. Return ReviewABSAResult
         """
-        pass
+        
+        result = self.sentiment_analyzer.predict(review_text)
+
+        aspects = result.get('aspect', [])
+        sentiments = result.get('sentiment', [])
+        confidences = result.get('confidence', [])
+
+        aspect_results = []
+
+        for aspect, sentiment, confidence in zip(aspects, sentiments, confidences):
+
+            canonical_name = self.map_aspect_to_canonical(aspect)
+            
+            # Build the individual AspectResult item
+            aspect_item = AspectResult(
+                aspect=canonical_name,
+                sentiment=sentiment,
+                confidence=float(confidence)
+            )
+            aspect_results.append(aspect_item)
+            
+        return ReviewABSAResult(review_text=review_text, aspects=aspect_results)
 
     def analyze_batch(self, review_texts: List[str]) -> List[ReviewABSAResult]:
         """
@@ -73,7 +104,39 @@ class ABSAInference:
           results = self.sentiment_analyser.predict(review_texts)
           Parse results list into List[ReviewABSAResult]
         """
-        pass
+        
+        results = self.sentiment_analyzer.predict(review_texts)
+
+        # Ensure results is treated as a list even if a single string was passed
+        if isinstance(results, dict):
+            results = [results]
+            
+        parsed_batch = []
+        
+        # Parse the results list into List[ReviewABSAResult]
+        
+        for text, res in zip(review_texts, results):
+            aspects = res.get('aspect', [])
+            sentiments = res.get('sentiment', [])
+            confidences = res.get('confidence', [])
+            
+            aspect_results = []
+            
+            for aspect, sentiment, confidence in zip(aspects, sentiments, confidences):
+                # FIX: Use the mapping logic method consistently here too
+                canonical_name = self.map_aspect_to_canonical(aspect)
+                
+                aspect_item = AspectResult(
+                    aspect=canonical_name,
+                    sentiment=sentiment,
+                    confidence=float(confidence)
+                )
+                aspect_results.append(aspect_item)
+                
+            parsed_batch.append(ReviewABSAResult(review_text=text, aspects=aspect_results))
+            
+        return parsed_batch
+
 
     def map_aspect_to_canonical(self, raw_aspect: str) -> str:
         """
@@ -91,4 +154,24 @@ class ABSAInference:
           3. Check if any keyword from aspects.py matches
           4. Return matched canonical name or "other"
         """
-        pass
+        
+        aspect_lower = raw_aspect.lower().strip()
+
+        # Check direct canonical name match first
+        if aspect_lower in ASPECTS:
+            return aspect_lower
+
+        # Check if canonical name is substring of raw aspect
+        # e.g. "battery life" contains "battery"
+        for canonical, data in ASPECTS.items():
+            if canonical in aspect_lower:
+                return canonical
+
+        # Check keywords from aspects.py
+        # e.g. "cam" matches camera keywords, "mah" matches battery
+        for canonical, data in ASPECTS.items():
+            for keyword in data["keywords"]:
+                if keyword in aspect_lower:
+                    return canonical
+
+        return "other"

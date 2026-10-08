@@ -64,3 +64,5 @@ monitoring/
 alembic.ini
 pyproject.toml
 README.md
+checkpoints/
+checkpoints.json

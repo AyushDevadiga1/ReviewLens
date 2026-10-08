@@ -19,7 +19,16 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy project source
+# PyABSA runtime assets (own layers — cached unless requirements change):
+# 1. spacy syntax model — AspectExtractor.predict() needs it and its
+#    auto-downloader fails inside restricted networks, so bake it in.
+# 2. multilingual ABSA checkpoint (~500MB) — baking avoids a slow,
+#    restart-loop-prone first-boot download; WORKDIR is /app so the
+#    runtime finds checkpoints/ without re-downloading.
+RUN python -m spacy download en_core_web_sm
+RUN python -c "from pyabsa import AspectTermExtraction as ATEPC; ATEPC.AspectExtractor(checkpoint='multilingual', auto_device=False)"
+
+# Copy project source (.dockerignore keeps checkpoints/ and mlruns/ out)
 COPY . .
 
 # Expose FastAPI port

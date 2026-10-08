@@ -32,3 +32,6 @@ scraper_cache/
 # OS
 .DS_Store
 Thumbs.db
+# PyABSA checkpoint cache (re-downloadable, ~500MB)
+checkpoints/
+checkpoints.json

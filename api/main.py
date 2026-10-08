@@ -54,9 +54,16 @@ async def lifespan(app: FastAPI):
          cleans up automatically when the process exits.
       2. If you add background tasks later, cancel them here.
     """
+    
     # startup
+    create_tables()
+    app.state.fake_detector = FakeReviewDetector()
+    app.state.absa = ABSAInference()
+    app.state.start_time = time.time()
+    print("ReviewLens API ready")
+    print(f"  Fake detector: {app.state.fake_detector.model_version}")
     yield
-    # shutdown
+    # shutdown — nothing needed
 
 
 app = FastAPI(

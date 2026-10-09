@@ -14,6 +14,7 @@ __pycache__
 # ai-agents
 .qodo
 .opencode
+.freebuff
 
 # ML artifacts
 ml/fake_review/model/

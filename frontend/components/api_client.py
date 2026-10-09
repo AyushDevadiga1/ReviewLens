@@ -19,7 +19,8 @@ load_dotenv()  # local `streamlit run` picks up .env; compose injects env direct
 API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000").rstrip("/")
 ENV_API_KEY = os.getenv("API_KEY", os.getenv("API_KEY_SECRET", ""))
 
-ANALYZE_TIMEOUT = 600  # ABSA over hundreds of reviews is CPU-bound minutes
+ANALYZE_TIMEOUT = 1500  # Band-aid: a 171-review product needs ~20 min CPU.
+# Proper cure is async jobs (submit → poll), tracked as a project stage.
 DEFAULT_TIMEOUT = 60
 
 try:

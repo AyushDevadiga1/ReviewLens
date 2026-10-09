@@ -7,7 +7,9 @@ import plotly.graph_objects as go
 from streamlit_searchbox import st_searchbox
 
 from components.api_client import (
+    api_get,
     api_post,
+    api_delete,
     product_search_options,
     take_product_match,
 )
@@ -132,6 +134,56 @@ def _render_result(body: dict):
     )
 
 
+def _render_job_panel():
+    """Manual polling loop for the submitted background job.
+
+    Deliberately click-to-refresh instead of auto-polling: Streamlit has
+    no non-blocking sleep here, and a blocking loop would make Cancel
+    unclickable — the exact trap this panel exists to avoid.
+    """
+    job_id = st.session_state.get("job_id")
+    if not job_id:
+        return
+
+    col1, col2 = st.columns(2)
+    if col1.button("Check status"):
+        try:
+            st.session_state["job_state"] = api_get(f"/jobs/{job_id}")
+        except RuntimeError as exc:
+            st.error(str(exc))
+            return
+    if col2.button("Cancel job"):
+        try:
+            st.session_state["job_state"] = api_delete(f"/jobs/{job_id}")
+            st.warning("Cancellation requested — the worker stops at the "
+                       "next batch boundary.")
+        except RuntimeError as exc:
+            st.error(str(exc))
+            return
+
+    state = st.session_state.get("job_state")
+    if not state:
+        st.info("Job submitted — press Check status for progress.")
+        return
+
+    status = state.get("status", "?")
+    total = state.get("progress_total", 0) or 0
+    done = state.get("progress_done", 0) or 0
+    if total > 0:
+        st.progress(min(done / total, 1.0), text=f"{status} — {done}/{total} reviews")
+    else:
+        st.caption(f"Status: {status}…")
+
+    if status == "done" and state.get("result"):
+        st.toast("Analysis complete", icon="✅")
+        _render_result(state["result"])
+    elif status == "failed":
+        st.error(f"Job failed: {state.get('error', 'unknown error')}")
+    elif status == "cancelled":
+        st.warning("Job cancelled — partial rows already stored stay stored "
+                   "(dedup keeps a re-run clean).")
+
+
 mode = st.radio("Input", ["Database product", "Single review text"],
                 horizontal=True)
 
@@ -144,16 +196,19 @@ if mode == "Database product":
     )
     match = take_product_match(pick, "single_product_options")
     if st.button("Analyze", disabled=match is None):
-        with st.spinner("Running fake detection + ABSA…"):
-            try:
-                body = api_post("/analyze/", {
-                    "product_name": match["product_name"],
-                    "platform": match["platform"]})
-            except RuntimeError as exc:
-                st.error(str(exc))
-            else:
-                st.toast("Analysis complete", icon="✅")
-                _render_result(body)
+        # Product runs take minutes: submit as a background job and poll.
+        # Refresh-safe — the job survives; only this view re-attaches.
+        try:
+            job = api_post("/jobs/analyze", {
+                "product_name": match["product_name"],
+                "platform": match["platform"]})
+        except RuntimeError as exc:
+            st.error(str(exc))
+        else:
+            st.session_state["job_id"] = job["job_id"]
+            st.session_state.pop("job_state", None)
+
+    _render_job_panel()
 else:
     text = st.text_area("Review text (min 20 characters)",
                         placeholder="Battery lasts two days, camera is fine…")

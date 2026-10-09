@@ -78,6 +78,13 @@ def api_post(path: str, payload: dict) -> dict:
     return _checked(response)
 
 
+def api_delete(path: str) -> dict:
+    response = requests.delete(
+        API_BASE + path, headers=_headers(), timeout=DEFAULT_TIMEOUT,
+    )
+    return _checked(response)
+
+
 @st.cache_data(ttl=300)
 def cached_get(path: str, params_key: tuple = ()) -> dict:
     """Cached GET for navigation that must not re-hit the API.

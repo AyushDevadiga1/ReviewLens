@@ -58,33 +58,51 @@ measures that the placeholders are syntactically valid.
 
 ## Getting Started
 
+Prerequisites: Python 3.11, Docker Desktop.
+
 ```bash
 python -m venv .venv
 .venv\Scripts\activate          # Windows
 pip install -r requirements.txt
-
-copy .env.example .env         # Windows; cp on Linux/macOS
 ```
 
-`db/session.py` calls `load_dotenv()` at import, so `.env` is picked up
-automatically for local runs. Inside Docker, `docker-compose.yml` sets
-`DATABASE_URL` explicitly and takes precedence.
+Copy `.env.example` to `.env` (`cp` on Linux/macOS) and set the secrets —
+at minimum `POSTGRES_PASSWORD` and `API_KEY_SECRET`. `db/session.py` calls
+`load_dotenv()` at import, so `.env` is picked up automatically for local
+runs. Inside Docker, `docker-compose.yml` values take precedence.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `DATABASE_URL` | `postgresql://reviewlens:password@localhost:5432/reviewlens` | Postgres connection |
-| `SQL_ECHO` | `False` | Log every SQL statement **and bound parameters** — review text ends up in logs. Dev only. |
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Postgres connection (no default — fails fast if unset) |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | DB container init + API URL composition |
+| `API_KEY_SECRET` | Shared secret hashed for the `X-API-Key` gate |
+| `MLFLOW_TRACKING_URI` | Where training runs are logged |
+| `SQL_ECHO` | Log every SQL statement **and bound parameters** — review text ends up in logs. Dev only. |
 
-Run the API once the routers are implemented:
+### Services that must run in parallel
+
+| Service | How | Port | Needs |
+|---|---|---|---|
+| Postgres (`db`) | `docker compose up -d db` | 5433 → 5432 | — (comes first; API waits on it) |
+| FastAPI (`api`) | `docker compose up -d api` **or** `python -m uvicorn api.main:app --port 8000` | 8000 | `db` healthy, `API_KEY_SECRET` set |
+| Streamlit (`frontend`) | `docker compose up -d frontend` **or** `streamlit run frontend/Overview.py` | 8501 | `api` reachable |
+| MLflow (`mlflow`) | `docker compose up -d mlflow` | 5000 | optional (training logs only) |
+| Prometheus + Grafana | `docker compose up -d prometheus grafana` | 9090 / 3000 | optional (metrics not wired yet) |
+
+Do **not** run plain `docker compose up -d` with stale images — old
+`api`/`frontend` containers steal ports 8000/8501. Either rebuild first
+(`docker compose build api frontend`) or start only what you need.
+
+First run: open the dashboard → Single Product → analyse one product
+(`B0002SYC5O` / `amazon` is a good demo) → Compare and Trends light up
+once aspects are stored. API auth: every route except `/health` needs
+the `X-API-Key` header (the dashboard sends it automatically).
+
+Full stack from scratch:
 
 ```bash
-uvicorn api.main:app --reload --port 8000
-```
-
-Full stack:
-
-```bash
-docker-compose up api db mlflow
+docker compose build api frontend
+docker compose up -d
 ```
 
 ## Data Sources

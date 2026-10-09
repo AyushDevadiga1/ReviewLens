@@ -98,3 +98,22 @@ class HealthResponse(BaseModel):
     uptime_seconds: float
     total_products_in_db: int  # quick sanity check that data was loaded
     total_reviews_in_db: int
+
+
+class JobAccepted(BaseModel):
+    job_id: str                # poll GET /jobs/{job_id} for progress
+    status: str                # always "queued" at submit time
+
+
+class JobStatus(BaseModel):
+    job_id: str
+    mode: str                  # "single" | "product"
+    status: str                # queued | running | done | failed | cancelled
+    progress_total: int        # reviews to process (0 until loaded)
+    progress_done: int         # reviews through ABSA so far
+    cancel_requested: bool
+    result: Optional[dict] = None      # AnalyzeResponse payload once done
+    error: Optional[str] = None        # failure reason when failed
+    created_at: datetime
+    updated_at: datetime
+

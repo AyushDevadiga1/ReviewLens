@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
-from api.routers import analyze, compare, trends, health, products
+from api.routers import analyze, compare, trends, health, products, jobs
 from api.services.fake_detector import FakeReviewDetector
 from api.services.absa import ABSAInference
 from api.middleware.auth import APIKeyMiddleware
@@ -108,3 +108,4 @@ app.include_router(compare.router)
 app.include_router(trends.router)
 app.include_router(health.router)
 app.include_router(products.router)   # new — product discovery
+app.include_router(jobs.router)       # async analyze jobs + polling

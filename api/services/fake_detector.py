@@ -35,10 +35,10 @@ class FakeReviewDetector:
         """
         base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
         target_dir = os.path.join(base_dir, model_dir)
-        
+
         self.vectorizer_path = os.path.join(target_dir, "tfidf_vectorizer.pkl")
         self.model_path = os.path.join(target_dir, "classifier.pkl")
-        
+
         self.vectorizer = None
         self.model = None
 
@@ -48,8 +48,19 @@ class FakeReviewDetector:
 
         self.label_encoder_path = os.path.join(target_dir, "label_encoder.pkl")
 
+        # v2 binary fake/genuine classifier (Ott corpus). Preferred when
+        # present; the v1 sentiment+heuristic path stays as fallback.
+        v2_dir = os.path.join(target_dir, "v2")
+        self.v2_model_path = os.path.join(v2_dir, "classifier.pkl")
+        self.v2_vectorizer_path = os.path.join(v2_dir, "tfidf_vectorizer.pkl")
+        self.v2_metadata_path = os.path.join(v2_dir, "metadata.json")
+        self.v2_model = None
+        self.v2_vectorizer = None
+        self.use_v2 = False
+
         # Load the assets and metadata immediately into memory
         self.load_artifacts()
+        self.load_v2_artifacts()
 
     def load_artifacts(self):
         """Helper method to handle safe file reading at startup."""
@@ -79,6 +90,26 @@ class FakeReviewDetector:
         except Exception as e:
             print(f"Error initializing ML artifacts: {str(e)}")
 
+    def load_v2_artifacts(self):
+        """Load the binary fake classifier. Silent fallback to v1."""
+        try:
+            if (os.path.exists(self.v2_vectorizer_path)
+                    and os.path.exists(self.v2_model_path)):
+                with open(self.v2_vectorizer_path, "rb") as f:
+                    self.v2_vectorizer = pickle.load(f)
+                with open(self.v2_model_path, "rb") as f:
+                    self.v2_model = pickle.load(f)
+                print(f"Successfully loaded Fake Review Detector v2 from "
+                      f"{self.v2_model_path}")
+                self.use_v2 = True
+            if os.path.exists(self.v2_metadata_path):
+                with open(self.v2_metadata_path, "r") as f:
+                    self.model_version = json.load(f).get(
+                        "model_type", "binary-fake-v2")
+        except Exception as e:
+            print(f"v2 unavailable, staying on v1 heuristic: {str(e)}")
+            self.use_v2 = False
+
     def predict_single(self, review_text: str ,rating : float = 4.0) -> FakeDetectionResult:
         """
         Run fake detection on one review.
@@ -98,6 +129,16 @@ class FakeReviewDetector:
         """
         if self.vectorizer is None or self.model is None:
             return FakeDetectionResult(is_fake=False, confidence=0.0, model_version=self.model_version)
+
+        # v2: binary fake classifier decides directly (classes [0, 1]).
+        if self.use_v2:
+            X_text = self.v2_vectorizer.transform([review_text])
+            fake_prob = float(self.v2_model.predict_proba(X_text)[0][1])
+            return FakeDetectionResult(
+                is_fake=fake_prob > 0.5,
+                confidence=round(fake_prob, 4),
+                model_version=self.model_version
+            )
 
         X_text = self.vectorizer.transform([review_text])
         normalised_rating = (rating - 1.0) / 4.0
@@ -144,6 +185,19 @@ class FakeReviewDetector:
         """
         if self.vectorizer is None or self.model is None or not review_texts:
             return []
+
+        # v2: one vectorize + one predict for the whole batch.
+        if self.use_v2:
+            X_batch = self.v2_vectorizer.transform(review_texts)
+            fake_probas = self.v2_model.predict_proba(X_batch)[:, 1]
+            return [
+                FakeDetectionResult(
+                    is_fake=bool(prob > 0.5),
+                    confidence=round(float(prob), 4),
+                    model_version=self.model_version
+                )
+                for prob in fake_probas
+            ]
 
         X_text_batch = self.vectorizer.transform(review_texts)
 

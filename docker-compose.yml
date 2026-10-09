@@ -1,5 +1,3 @@
-version: '3.8'
-
 # ReviewLens — full stack
 # Services: api, db, mlflow, frontend, prometheus, grafana
 # Start everything: docker-compose up

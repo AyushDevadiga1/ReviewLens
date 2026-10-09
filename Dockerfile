@@ -19,6 +19,11 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Shed the compilers: wheels are built, git stays (PyABSA needs the
+# binary at runtime), -dev headers go (~300MB saved).
+RUN apt-get purge -y --auto-remove build-essential libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # HuggingFace hub's xet transfer backend hangs in this environment
 # (both at build and at runtime) — force the classic HTTP path.
 ENV HF_HUB_DISABLE_XET=1

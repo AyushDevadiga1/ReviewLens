@@ -70,25 +70,23 @@ def _render_sentiment_dist(aspects: list):
 
 
 def _render_fake_trace(text: str, rating: float, flagged: bool):
-    """Show the exact rule evaluation behind a fake/genuine verdict.
+    """Show the checkable facts behind a fake/genuine verdict.
 
-    The API evaluates (positive_prob > 0.90 AND len < 50) OR
-    (rating == 5 AND len < 30). positive_prob is model-internal, so the
-    trace shows the visible half plus which rule the verdict implies.
+    The backend decides with the v2 binary classifier when deployed
+    (model fake-probability, threshold 0.5); the length rules below are
+    the legacy v1 heuristic, shown here as a hand cross-check.
     """
     length = len(text.strip())
     with st.expander("Why this verdict?"):
         st.markdown(
-            f"- Text length: **{length}** chars\n"
-            f"- Rating: **{rating}★**\n"
-            f"- 5-star one-liner rule (< 30 chars + 5★): "
-            f"**{'FIRED' if flagged and rating >= 5.0 and length < 30 else '—'}**\n"
-            f"- Short-gushing rule (< 50 chars + model positive_prob > 0.90): "
-            f"**{'FIRED' if flagged and not (rating >= 5.0 and length < 30) else '—'}**\n"
-            + ("" if flagged else
-               "- Neither rule fired → genuine.\n")
-            + "- positive_prob itself is model-internal; re-check by hand: "
-              "short + gushing usually means incentivised."
+            f"- Text length: **{length}** chars, rating **{rating}★**\n"
+            f"- Legacy cross-check — 5★ one-liner (< 30 chars): "
+            f"**{'FIRED' if rating >= 5.0 and length < 30 else '—'}**\n"
+            f"- Legacy cross-check — short-gushing (< 50 chars): "
+            f"**{'FIRED' if length < 50 else '—'}**\n"
+            f"- Verdict: **{'FAKE' if flagged else 'GENUINE'}**\n"
+            "- Short + gushing usually means incentivised; long and "
+            "specific usually means genuine — re-check by hand."
         )
 
 
@@ -107,8 +105,8 @@ def _render_result(body: dict):
             delta=f"-{filt.get('fake_count', 0)} fake",
             delta_color="inverse",
         )
-        st.caption("Short, extremely positive reviews are filtered before "
-                   "ABSA — see the Pipeline page for the exact rule.")
+        st.caption("Flagged reviews are filtered before "
+                   "ABSA — see the Pipeline page for how.")
 
     aspects = body.get("aspects", [])
     if not aspects:

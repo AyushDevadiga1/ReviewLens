@@ -45,12 +45,12 @@ _STAGES = [
      "Whitespace normalised, sub-20-char reviews dropped. Everything "
      "downstream — including the fake heuristic thresholds — is calibrated "
      "**above** this floor, or the filter could never fire."),
-    ("3 · Fake filter (~5% flag rate)",
-     "A TF-IDF + LogisticRegression sentiment model scores each review; "
-     "flagged fake when *extremely positive and short* "
-     "(`positive_prob > 0.90`, < 50 chars) or a *5-star one-liner* "
-     "(< 30 chars). Fake rows store per review (deduped); genuine text "
-     "flows to ABSA."),
+    ("3 · Fake filter (binary model, ~88% F1)",
+     "A TF-IDF + LogisticRegression classifier trained on 1,600 "
+     "labelled fake/genuine reviews decides per review (fake-probability "
+     "> 0.5). A legacy length heuristic survives only as fallback when "
+     "v2 artifacts are absent. Fake rows store per review (deduped); "
+     "genuine text flows to ABSA."),
     ("4 · ABSA (PyABSA multilingual)",
      "Surviving reviews go through aspect-term extraction: terms map to "
      "7 canonical aspects with sentiment + confidence. Empty results "

@@ -15,25 +15,27 @@ def render_radar_chart(product_data: List[dict], aspect_display_names: List[str]
 
     Args:
         product_data: list of dicts, each:
-                      {"name": str, "scores": {aspect_key: float (0–10)}}
+                      {"name": str, "scores": {display_name: float (0–10)}}
         aspect_display_names: ordered list of display labels for the radar axes
                               e.g. ["Battery Life", "Camera", "Display", ...]
-
-    TODO:
-      1. fig = go.Figure()
-      2. For each product in product_data:
-         scores_ordered = [product["scores"].get(a, 0) for a in aspect_keys]
-         fig.add_trace(go.Scatterpolar(
-             r=scores_ordered + [scores_ordered[0]],   # close the polygon
-             theta=aspect_display_names + [aspect_display_names[0]],
-             fill='toself',
-             name=product["name"]
-         ))
-      3. fig.update_layout(
-             polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
-             showlegend=True,
-             title="Aspect Sentiment Comparison"
-         )
-      4. st.plotly_chart(fig, use_container_width=True)
     """
-    pass
+    if not product_data or not aspect_display_names:
+        st.info("No aspect data to chart yet — analyze a product first.")
+        return
+
+    fig = go.Figure()
+    for product in product_data:
+        scores = product.get("scores", {})
+        ordered = [float(scores.get(axis, 0.0)) for axis in aspect_display_names]
+        fig.add_trace(go.Scatterpolar(
+            r=ordered + [ordered[0]],   # close the polygon
+            theta=aspect_display_names + [aspect_display_names[0]],
+            fill='toself',
+            name=product.get("name", "product"),
+        ))
+    fig.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
+        showlegend=True,
+        title="Aspect Sentiment Comparison",
+    )
+    st.plotly_chart(fig, use_container_width=True)

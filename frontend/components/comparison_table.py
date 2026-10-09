@@ -32,13 +32,42 @@ def render_comparison_table(compare_response: dict):
               ],
               "winners": [{"aspect": str, "display_name": str, "winner": str, ...}]
             }
-
-    TODO:
-      1. Build a dict: {aspect_key: {product_name: "score_emoji score"}}
-         e.g. {"battery": {"OnePlus 12": "🟢 8.4", "Samsung S24": "🟡 6.1"}}
-      2. Add a "Winner" column from compare_response["winners"]
-      3. Create pd.DataFrame, rows=aspects, columns=product names + "Winner"
-      4. st.dataframe(df, use_container_width=True)
-      5. Below the table: st.caption() showing which product wins the most aspects
     """
-    pass
+
+    products = compare_response.get("products", [])
+    winners = {w["aspect"]: w["winner"] for w in compare_response.get("winners", [])}
+    if not products:
+        st.info("No products to compare.")
+        return
+
+    # Union of aspect keys across products, labelled by display name.
+    aspect_labels = {}
+    for product in products:
+        for item in product.get("aspects", []):
+            aspect_labels[item["aspect"]] = item.get("display_name", item["aspect"])
+
+    rows = {}
+    for aspect_key, label in aspect_labels.items():
+        row = {}
+        for product in products:
+            scores = {a["aspect"]: a["mean_score"] for a in product.get("aspects", [])}
+            score = scores.get(aspect_key)
+            row[product["product_name"]] = (
+                f"{_score_to_emoji(score)} {score:.1f}" if score is not None else "—"
+            )
+        row["Winner"] = winners.get(aspect_key, "—")
+        rows[label] = row
+
+    df = pd.DataFrame(rows).T
+    st.dataframe(df, use_container_width=True)
+
+    # Which product wins the most aspects?
+    win_counts = {}
+    for winner in winners.values():
+        win_counts[winner] = win_counts.get(winner, 0) + 1
+    if win_counts:
+        best = max(win_counts, key=win_counts.get)
+        st.caption(
+            f"{best} wins {win_counts[best]} of {len(winners)} aspects. "
+            f"Margins are in the API response (`winning_score` − runner-up)."
+        )

@@ -5,9 +5,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Pages import `from ml.absa.aspects import ASPECTS` — /app must be importable
+ENV PYTHONPATH=/app
+
 # Streamlit only needs a subset of the full requirements
 RUN pip install --no-cache-dir \
-    streamlit==1.28.2 \
+    streamlit==1.32.0 \
     plotly==5.18.0 \
     pandas==2.1.3 \
     requests==2.31.0 \
@@ -16,6 +19,9 @@ RUN pip install --no-cache-dir \
 COPY frontend/ ./frontend/
 COPY ml/absa/aspects.py ./ml/absa/aspects.py
 
+# Theme lives with the app code, but Streamlit only reads $CWD/.streamlit
+COPY frontend/.streamlit/config.toml /app/.streamlit/config.toml
+
 EXPOSE 8501
 
-CMD ["streamlit", "run", "frontend/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "frontend/Overview.py", "--server.port=8501", "--server.address=0.0.0.0"]

@@ -64,7 +64,7 @@ class FakeReviewDetector:
                     self.label_encoder = pickle.load(f)
                 print(f"Successfully loaded Fake Review Detector from {self.model_path}")
             else:
-                print(f"Warning: Model files not found.")
+                print("Warning: Model files not found.")
 
             # 2. DYNAMIC LOOKUP: Load model version from metadata JSON
             if os.path.exists(self.metadata_path):

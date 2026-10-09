@@ -43,7 +43,6 @@ from ml.mlflow_tracking import log_experiment
 
 import argparse
 from datetime import datetime
-import typing_extensions
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression

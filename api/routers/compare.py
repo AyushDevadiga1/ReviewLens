@@ -10,7 +10,6 @@ Architecture note:
   with a clear message directing the user to POST /analyze first.
 """
 
-from api.schemas.response import CompareResponse
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from datetime import datetime

@@ -16,9 +16,9 @@ os.environ["AUTO_DEVICE"] = "False"
 
 import warnings
 warnings.filterwarnings("ignore")
-from pyabsa import AspectTermExtraction as ATEPC
+from pyabsa import AspectTermExtraction as ATEPC  # noqa: E402 — env vars above must precede pyabsa import
 
-from ml.absa.aspects import ASPECTS
+from ml.absa.aspects import ASPECTS  # noqa: E402
 
 @dataclass
 class AspectResult:

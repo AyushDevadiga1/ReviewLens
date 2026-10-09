@@ -77,7 +77,6 @@ async def health(
         total_reviews  = 0
 
     fake_detector = request.app.state.fake_detector
-    absa = request.app.state.absa
     
     status = "healthy" if database_connected and total_reviews > 0 else "degraded"
     

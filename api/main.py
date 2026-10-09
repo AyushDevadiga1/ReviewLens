@@ -13,6 +13,7 @@ Architecture note:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import os
 from api.routers import analyze, compare, trends, health, products
 from api.services.fake_detector import FakeReviewDetector
 from api.services.absa import ABSAInference
@@ -68,6 +69,10 @@ async def lifespan(app: FastAPI):
     # shutdown — nothing needed
 
 
+# Self-documentation (Swagger/ReDoc/schema) is an attack-surface map —
+# off unless explicitly enabled. Local dev: ENABLE_DOCS=true in .env.
+_DOCS_ENABLED = os.getenv("ENABLE_DOCS", "false").lower() in ("true", "1", "yes")
+
 app = FastAPI(
     title="ReviewLens API",
     description=(
@@ -76,7 +81,10 @@ app = FastAPI(
         "POST /analyze to run the ML pipeline. GET /products/search to discover available products."
     ),
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/docs" if _DOCS_ENABLED else None,
+    redoc_url="/redoc" if _DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if _DOCS_ENABLED else None,
 )
 
 # CORS — allow all origins for development

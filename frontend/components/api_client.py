@@ -96,3 +96,33 @@ def cached_get(path: str, params_key: tuple = ()) -> dict:
 def api_health() -> dict:
     """Fresh-enough backend status for the sidebar indicator."""
     return api_get("/health/")
+
+
+def product_search_options(term: str, stash_key: str) -> list:
+    """Suggestion list for st_searchbox, backed by GET /products/search.
+
+    Returns display labels; stashes the label→product mapping in
+    session state under stash_key (one key per searchbox instance).
+    Short terms and API misses yield [] — an empty dropdown, not an error.
+    """
+    term = term.strip()
+    if len(term) < 2:
+        return []
+    try:
+        results = cached_get("/products/search", (("query", term),))
+    except RuntimeError:
+        return []
+    opts = {
+        f"{p['product_name']} ({p['platform']}, "
+        f"{p['review_count']} reviews)": p
+        for p in results
+    }
+    st.session_state[stash_key] = opts
+    return list(opts)
+
+
+def take_product_match(label: str, stash_key: str):
+    """Resolve a picked suggestion label back to its product dict."""
+    if not label:
+        return None
+    return st.session_state.get(stash_key, {}).get(label)

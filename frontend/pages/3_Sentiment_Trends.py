@@ -4,7 +4,14 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from components.api_client import api_get, cached_get, ASPECTS
+from streamlit_searchbox import st_searchbox
+
+from components.api_client import (
+    api_get,
+    product_search_options,
+    take_product_match,
+    ASPECTS,
+)
 from components.sidebar import render_sidebar
 from components import theme
 
@@ -51,20 +58,17 @@ def render_trend_overlay(series: dict):
     st.plotly_chart(fig, use_container_width=True)
 
 
-try:
-    catalog = cached_get("/products/")
-except RuntimeError as exc:
-    st.error(str(exc))
+pick = st_searchbox(
+    lambda term: product_search_options(term, "trend_product_options"),
+    label="Type to search products…",
+    placeholder="OnePlus, B0002, bullets…",
+    key="trend_product_search",
+)
+match = take_product_match(pick, "trend_product_options")
+if match is None:
+    st.info("Search and pick a product to begin.")
     st.stop()
-if not catalog:
-    st.info("No products in the database yet — run the loaders first.")
-    st.stop()
-
-labels = {
-    f"{p['product_name']} ({p['platform']})": p["product_id"]
-    for p in catalog
-}
-choice = st.selectbox("Product", list(labels.keys()))
+product_id = match["product_id"]
 aspect_options = {ASPECTS[k].get("display_name", k): k for k in ASPECTS}
 aspect_labels = st.multiselect(
     "Aspects (overlay up to 3)",
@@ -84,7 +88,7 @@ if st.button("Show Trend"):
         for aspect_key in aspect_keys:
             try:
                 body = api_get("/trends/", params={
-                    "product_id": labels[choice],
+                    "product_id": product_id,
                     "aspect": aspect_key,
                     "weeks": weeks,
                 })

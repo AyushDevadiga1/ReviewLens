@@ -4,7 +4,13 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
-from components.api_client import api_post, cached_get
+from streamlit_searchbox import st_searchbox
+
+from components.api_client import (
+    api_post,
+    product_search_options,
+    take_product_match,
+)
 from components.radar_chart import render_radar_chart
 from components.sidebar import render_sidebar
 from components import theme
@@ -130,28 +136,13 @@ mode = st.radio("Input", ["Database product", "Single review text"],
                 horizontal=True)
 
 if mode == "Database product":
-    query = st.text_input("Type to search products…",
-                          placeholder="OnePlus, B0002, bullets…")
-    match = None
-    if len(query.strip()) >= 2:
-        try:
-            results = cached_get("/products/search",
-                                 (("query", query.strip()),))
-        except RuntimeError as exc:
-            if "API 404" in str(exc):
-                st.info("No products match — keep typing.")
-            else:
-                st.error(str(exc))
-            results = []
-        if results:
-            options = {
-                f"{p['product_name']} ({p['platform']}, "
-                f"{p['review_count']} reviews)": p
-                for p in results
-            }
-            pick = st.selectbox("Suggestions — pick one",
-                                list(options.keys()))
-            match = options[pick]
+    pick = st_searchbox(
+        lambda term: product_search_options(term, "single_product_options"),
+        label="Type to search products…",
+        placeholder="OnePlus, B0002, bullets…",
+        key="single_product_search",
+    )
+    match = take_product_match(pick, "single_product_options")
     if st.button("Analyze", disabled=match is None):
         with st.spinner("Running fake detection + ABSA…"):
             try:

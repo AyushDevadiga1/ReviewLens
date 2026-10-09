@@ -19,14 +19,31 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-# PyABSA runtime assets (own layers — cached unless requirements change):
-# 1. spacy syntax model — AspectExtractor.predict() needs it and its
-#    auto-downloader fails inside restricted networks, so bake it in.
-# 2. multilingual ABSA checkpoint (~500MB) — baking avoids a slow,
-#    restart-loop-prone first-boot download; WORKDIR is /app so the
-#    runtime finds checkpoints/ without re-downloading.
+# HuggingFace hub's xet transfer backend hangs in this environment
+# (both at build and at runtime) — force the classic HTTP path.
+ENV HF_HUB_DISABLE_XET=1
+
+# spacy syntax model — AspectExtractor.predict() needs it and its
+# auto-downloader fails inside restricted networks, so bake it in (small).
 RUN python -m spacy download en_core_web_sm
-RUN python -c "from pyabsa import AspectTermExtraction as ATEPC; ATEPC.AspectExtractor(checkpoint='multilingual', auto_device=False)"
+
+# The multilingual ABSA checkpoint (~810MB) is deliberately NOT baked here:
+# its download goes through the xet path above and, when baked, is lost on
+# every container recreate — each start re-downloaded 810MB before serving.
+# Instead ./checkpoints is bind-mounted by docker-compose.yml: fetched once
+# (PyABSA downloads it on first boot if the host dir is empty) and reused.
+
+# The GPU/CPU-embedding backbone that a cold boot otherwise fetches
+# (~1.1GB). Prefetched through transformers itself so the weights land
+# in the HF hub cache (~/.cache/huggingface) — exactly where the runtime
+# loader looks. (A raw curl to /app would be dead weight: no loader reads
+# arbitrary paths.) With HF_HUB_DISABLE_XET=1 above this uses plain HTTP.
+RUN python -c "
+from transformers import AutoModel, AutoTokenizer
+AutoTokenizer.from_pretrained('microsoft/mdeberta-v3-base')
+AutoModel.from_pretrained('microsoft/mdeberta-v3-base')
+print('backbone prefetched into hub cache', flush=True)
+"
 
 # Copy project source (.dockerignore keeps checkpoints/ and mlruns/ out)
 COPY . .

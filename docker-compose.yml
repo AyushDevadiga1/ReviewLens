@@ -21,11 +21,16 @@ services:
       - MLFLOW_TRACKING_URI=http://mlflow:5000
       - GIT_PYTHON_REFRESH=quiet
       - API_KEY_SECRET=${API_KEY_SECRET}
+      - HF_HUB_DISABLE_XET=1
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - ./ml:/app/ml          # mount trained model artifacts
+      # PyABSA multilingual checkpoint — kept on the host so a container
+      # recreate never re-downloads the 810MB model. Fetched once on first
+      # boot if the directory is empty.
+      - ./checkpoints:/app/checkpoints
     restart: unless-stopped
     healthcheck:
       # python:3.11-slim ships no curl — probe with stdlib instead.
@@ -81,6 +86,7 @@ services:
       - "8501:8501"
     environment:
       - API_BASE_URL=http://api:8000
+      - API_KEY=${API_KEY_SECRET}
     depends_on:
       - api
     restart: unless-stopped

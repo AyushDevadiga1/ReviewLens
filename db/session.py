@@ -28,7 +28,13 @@ def get_engine():
       return create_engine(DATABASE_URL, echo=False)
       echo=True for debugging (logs all SQL), False for production
     """
-    return create_engine(DATABASE_URL,echo=SQL_ECHO) # Close the firehose
+    connect_args = {}
+    if DATABASE_URL and DATABASE_URL.startswith("sqlite"):
+        # Workers run in threads; the default sqlite driver forbids
+        # cross-thread connection use. File DBs are still consistent
+        # because each thread gets its own Session/connection.
+        connect_args = {"check_same_thread": False}
+    return create_engine(DATABASE_URL,echo=SQL_ECHO,connect_args=connect_args) # Close the firehose
 
 
 def get_session_factory():

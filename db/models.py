@@ -84,3 +84,26 @@ class ApiLog(Base):
     status_code  : Mapped[int]      = mapped_column(Integer)
     latency_ms   : Mapped[float]    = mapped_column(Float)
     requested_at : Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class AnalysisJob(Base):
+    """One row per async analysis run. Workers update progress here;
+    readers poll it. cancel_requested is the cooperative escape hatch —
+    the worker checks it between review batches and stops early."""
+    __tablename__ = "analysis_jobs"
+
+    id               : Mapped[str]      = mapped_column(String(36), primary_key=True)
+    mode             : Mapped[str]      = mapped_column(String(20))  # single | product
+    product_name     : Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    platform         : Mapped[str]      = mapped_column(String(50), nullable=True)
+    review_text      : Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rating           : Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    status           : Mapped[str]      = mapped_column(String(20), default="queued")
+    progress_total   : Mapped[int]      = mapped_column(Integer, default=0)
+    progress_done    : Mapped[int]      = mapped_column(Integer, default=0)
+    cancel_requested : Mapped[bool]     = mapped_column(Boolean, default=False)
+    result_json      : Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error            : Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    created_at       : Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at       : Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow,
+                                                        onupdate=datetime.utcnow)
+

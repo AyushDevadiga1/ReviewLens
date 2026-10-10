@@ -102,7 +102,12 @@ def flipkart_to_reviewlens(raw: dict) -> Optional[dict]:
 
     # 4 & 5. Assemble final dict with product identifier and target platform
     final_dict = dict(normalised_data)
-    final_dict["product_identifier"] = raw.get("product_name", "").strip()
+    # Header variant tolerance: the Kaggle file uses "Product Name", but
+    # cleaned copies circulate with "product_name". Either must work —
+    # an empty identifier silently drops the row downstream.
+    final_dict["product_identifier"] = (
+        raw.get("Product Name") or raw.get("product_name") or ""
+    ).strip()
     final_dict["platform"] = "flipkart"
 
     # 6. Return the final dict

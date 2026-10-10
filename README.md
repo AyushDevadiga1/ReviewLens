@@ -11,50 +11,56 @@ classifier, runs Aspect-Based Sentiment Analysis on genuine reviews, stores
 everything in PostgreSQL, and serves results through a FastAPI REST API with a
 Streamlit comparison dashboard.
 
-Three-stage pipeline:
+Six-stage pipeline (plus async jobs for long runs):
 
-1. Fake Review Filter — DistilBERT / Logistic Regression classifier
-2. ABSA — PyABSA with BERT, extracts per-aspect sentiment scores
-3. Comparative Dashboard — side-by-side aspect comparison across products
+1. Ingest — offline Amazon/Flipkart loaders, idempotent re-runs
+2. Clean — 20-char floor, HTML/whitespace/unicode handling
+3. Fake Review Filter — binary TF-IDF+LR trained on 1,600 labelled reviews
+4. ABSA — PyABSA multilingual, 7 canonical aspects, version-proof parsing
+5. Aggregate — 0–10 scores, winners/margins, weekly trends
+6. Serve — FastAPI (auth + rate limits) and Streamlit dashboard
+
+Long product runs go through async jobs (`POST /jobs/analyze` → poll
+`GET /jobs/{id}` → cancel with `DELETE`).
 
 ## Status
 
-Work is in progress. The target architecture below is the design; this section
-is what actually runs today.
+Everything below runs and is verified end-to-end (41/41 tests real,
+no placeholders).
 
 | Module | State |
 |---|---|
-| `db/models.py` | **Done** — 5 tables: products, reviews, fake_scores, aspect_sentiments, api_logs |
-| `db/session.py` | **Done** — engine, session factory, `get_db()` FastAPI dependency, `create_tables()` |
-| `data_ingestion/cleaner.py` | **Done** — `clean_review_text()`, `extract_review_metadata()` |
-| `api/schemas/` | **Done** — Pydantic request/response models |
-| `ml/absa/aspects.py` | **Done** — 7 canonical aspect definitions |
-| `eda/` | **Done** — executed notebooks with findings baked in |
-| `data_ingestion/loaders/` | Stubbed — both loaders still `pass` |
-| `ml/fake_review/`, `ml/absa/inference.py` | Stubbed — training and inference not written |
-| `api/services/`, `api/routers/` | Stubbed — service layer and endpoints not wired |
-| `frontend/` | Stubbed — Streamlit pages not connected |
-| `db/migrations/` | Skeleton only — Alembic versions directory is empty |
+| `db/models.py` | **Done** — products, reviews, fake_scores, aspect_sentiments, api_logs, analysis_jobs |
+| `db/session.py` | **Done** — engine, factory, `get_db()`, `create_tables()`, thread-safe sessions |
+| `data_ingestion/` | **Done** — cleaner + both loaders, idempotent, header-tolerant Flipkart mapping |
+| `ml/fake_review/` | **Done** — v1 sentiment model + v2 binary fake classifier (Ott corpus, F1 0.88), MLflow logged |
+| `ml/absa/inference.py` | **Done** — AspectExtractor on 2.3.x and 2.4.x, spacy + checkpoint baked in Docker |
+| `ml/mlflow_tracking.py` | **Done** — experiment logging helper |
+| `api/services/` | **Done** — fake detector (v2 + fallback), aggregator, ABSA wrapper, shared pipeline |
+| `api/routers/` | **Done** — analyze, compare, trends, health (+metrics), products, jobs |
+| `api/middleware/` | **Done** — API-key auth + per-key rate limits, `/health` and `/metrics` open |
+| `frontend/` | **Done** — native multipage dashboard (Overview, Single, Compare, Trends, Pipeline) |
+| `monitoring/` | **Done** — Prometheus scrapes real `/metrics`; Grafana provisioned |
+| `db/migrations/` | Skeleton only — Alembic versions directory is empty (`create_tables()` used instead) |
 
-**21 of 99 functions have a real body.** The rest are docstring-only stubs
-carrying `TODO` markers.
+Known limits, stated plainly: the fake model is hotel-trained (transfers at
+~80–85% to phone reviews); ABSA needs minutes of CPU per hundred reviews
+(hence jobs); Prometheus has no alert rules yet.
 
 ### Tests
 
 ```
-46 test functions
-├─ 13 real assertions   → all pass  (tests/test_cleaner.py)
-└─ 33 docstring-only bodies
-   ├─ 21 pass vacuously  (test_ingestion, test_absa, test_fake_detector)
-   └─ 12 fail to collect  (test_api, test_scraper — see Known Issues)
+41 test functions — all real, zero placeholders:
+├─ 13 cleaner behaviour      (tests/test_cleaner.py)
+├─ 12 ingestion mapping      (tests/test_ingestion.py)
+├─ 6 aggregation math        (tests/test_absa.py)
+├─ 3 detector behaviour      (tests/test_fake_detector.py)
+└─ 7 API integration         (tests/test_api.py — temp DB, boots both models)
 ```
 
-Plain `pytest` runs **zero** tests: the two collection errors abort the whole
-run. You need `pytest --continue-on-collection-errors` to see the
-`34 passed, 2 errors` underneath it.
-
-Only `tests/test_cleaner.py` asserts anything today. A green run mostly
-measures that the placeholders are syntactically valid.
+Plain `pytest` runs the whole suite: `41 passed`. The API tests boot
+the real ABSA model, so the suite takes a few minutes — that is the
+price of integration tests that actually integrate.
 
 ## Getting Started
 
@@ -153,20 +159,16 @@ the anger signal ABSA depends on. A product name cannot ask a question, so
 
 ## Known Issues
 
-**PyABSA breaks collection, which breaks the whole test run.** `metric_visualizer`
-fails at import with `UpdateChecker.check() takes 1 positional argument but 3
-were given`. That stops `tests/test_api.py` collecting — and because pytest
-aborts on collection errors by default, a bare `pytest` runs **zero** tests
-right now. It would also stop `uvicorn` starting. `pip install --upgrade PyABSA`
-is the likely fix. Until then: `pytest --continue-on-collection-errors`.
+**Fake model is hotel-trained.** The v2 classifier learned on Ott hotel
+reviews; phone-review transfer runs ~80–85%, not the 88% in-domain number.
+Short one-liners stay genuinely ambiguous — the model leans genuine there.
 
-**`tests/test_scraper.py` imports a module that does not exist.** Line 8 does
-`from scraper.cleaner import ...`; the package is `data_ingestion` now. The
-file is superseded by `tests/test_ingestion.py` and should be deleted — it is
-the second collection error.
+**ABSA is CPU-slow.** ~7s per review means the demo product takes ~20 min;
+that is why product analysis runs as cancellable background jobs. No GPU
+path is configured.
 
 **Docstring drift in `data_ingestion/cleaner.py`.** Two comments describe the
-`??????` garbling as something the non-ASCII guard handles. It cannot — `?` is
+`??????` garbling as something the non-ASCII guard handles. It cannot - `?` is
 `U+003F`, inside `\x00-\x7F`. That guard fires on 0 Amazon rows and 4
 Dataset-SA rows out of 1,538,541 text fields. The HTML strip is the rule doing
 real work, on 7,451 Amazon rows.

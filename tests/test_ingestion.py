@@ -17,41 +17,57 @@ class TestCleanReviewText:
 
     def test_strips_html(self):
         """HTML tags must be removed from review text."""
-        # TODO: assert "<b>Great phone!</b>" → "Great phone!"
-        pass
+        raw = "<b>Great phone with excellent battery life indeed</b>"
+        cleaned = clean_review_text(raw)
+        assert cleaned is not None
+        assert "<" not in cleaned and ">" not in cleaned
+        assert "Great phone with excellent battery life indeed" in cleaned
 
     def test_collapses_whitespace(self):
         """Multiple spaces/newlines must collapse to a single space."""
-        # TODO: assert "  good   phone  " → "good phone"
-        pass
+        assert clean_review_text("  good   phone with great battery life  ") == \
+            "good phone with great battery life"
 
     def test_short_review_returns_none(self):
         """Text under 10 chars must return None."""
-        # TODO: assert clean_review_text("ok") is None
-        pass
+        assert clean_review_text("ok") is None
 
     def test_unicode_normalised(self):
-        """Unicode should be NFC-normalised (handles Hinglish, emoji)."""
-        # TODO: pass a string with combining characters, assert it normalises
-        pass
-
+        """Combining marks fold to ASCII; Devanagari script is preserved."""
+        import unicodedata
+        # Force decomposed form programmatically: e + combining acute.
+        decomposed = unicodedata.normalize(
+            "NFD", "e\u0301clair is a tasty French pastry indeed")
+        assert any(unicodedata.combining(c) for c in decomposed)
+        cleaned = clean_review_text(decomposed)
+        assert not any(unicodedata.combining(c) for c in cleaned)
+        assert cleaned.startswith("eclair")
+        hinglish = ("\u092f\u0939 \u092b\u094b\u0928 \u092c\u0939\u0941\u0924 "
+                    "\u0905\u091a\u091b\u093e \u0948 and the battery "
+                    "life is great overall")
+        kept = clean_review_text(hinglish)
+        assert any("\u0900" <= c <= "\u097f" for c in kept)
 
 class TestExtractMetadata:
 
     def test_rating_clamped_to_range(self):
         """Ratings above 5.0 must be clamped to 5.0."""
-        # TODO: assert extract_review_metadata({"text": "...", "rating": "9", ...})["rating"] == 5.0
-        pass
+        result = extract_review_metadata({
+            "text": "Great battery life on this phone indeed",
+            "rating": "9", "reviewer": "R"})
+        assert result["rating"] == 5.0
 
     def test_reviewer_name_truncated(self):
         """Reviewer names over 200 chars must be truncated."""
-        # TODO: long_name = "A" * 300; assert len(result["reviewer_name"]) <= 200
-        pass
+        result = extract_review_metadata({
+            "text": "Great battery life on this phone indeed",
+            "rating": "4", "reviewer": "A" * 300})
+        assert len(result["reviewer_name"]) == 200
 
     def test_missing_text_returns_none_review(self):
         """When text is empty, review_text in result should be None."""
-        # TODO: pass empty text, assert result["review_text"] is None
-        pass
+        result = extract_review_metadata({"text": "", "rating": "4"})
+        assert result["review_text"] is None
 
 
 # ── amazon_loader.py tests ─────────────────────────────────────────────────────
@@ -61,38 +77,34 @@ class TestMcauleyMapping:
     def test_maps_required_fields(self):
         """
         mcauley_to_reviewlens must map all five required fields.
-        TODO:
-          from data_ingestion.loaders.amazon_loader import mcauley_to_reviewlens
-          raw = {"asin": "B001", "reviewText": "Great battery life on this phone.",
-                 "overall": 5.0, "reviewerName": "Rahul", "reviewTime": "01 1, 2020",
-                 "verified": True}
-          result = mcauley_to_reviewlens(raw)
-          assert result["product_identifier"] == "B001"
-          assert result["rating"] == 5.0
-          assert result["verified_purchase"] is True
         """
-        pass
+        from data_ingestion.loaders.amazon_loader import mcauley_to_reviewlens
+        raw = {"asin": "B001", "reviewText": "Great battery life on this phone.",
+               "overall": 5.0, "reviewerName": "Rahul", "reviewTime": "01 1, 2020",
+               "verified": True}
+        result = mcauley_to_reviewlens(raw)
+        assert result["product_identifier"] == "B001"
+        assert result["rating"] == 5.0
+        assert result["verified_purchase"] is True
 
     def test_falls_back_to_summary(self):
         """
         If reviewText is missing, summary must be used as fallback text.
-        TODO:
-          raw = {"asin": "B002", "summary": "Amazing camera quality here.",
-                 "overall": 4.0, "reviewTime": "02 1, 2020", "verified": False}
-          result = mcauley_to_reviewlens(raw)
-          assert result is not None
-          assert "camera" in result["review_text"]
         """
-        pass
+        from data_ingestion.loaders.amazon_loader import mcauley_to_reviewlens
+        raw = {"asin": "B002", "summary": "Amazing camera quality here.",
+               "overall": 4.0, "reviewTime": "02 1, 2020", "verified": False}
+        result = mcauley_to_reviewlens(raw)
+        assert result is not None
+        assert "camera" in result["review_text"]
 
     def test_missing_text_returns_none(self):
         """
         If both reviewText and summary are absent, return None.
-        TODO:
-          raw = {"asin": "B003", "overall": 3.0}
-          assert mcauley_to_reviewlens(raw) is None
         """
-        pass
+        from data_ingestion.loaders.amazon_loader import mcauley_to_reviewlens
+        raw = {"asin": "B003", "overall": 3.0}
+        assert mcauley_to_reviewlens(raw) is None
 
 
 # ── flipkart_loader.py tests ───────────────────────────────────────────────────
@@ -102,24 +114,25 @@ class TestFlipkartMapping:
     def test_maps_required_fields(self):
         """
         flipkart_to_reviewlens must map product name, review text, rating.
-        TODO:
-          from data_ingestion.loaders.flipkart_loader import flipkart_to_reviewlens
-          raw = {"Product Name": "OnePlus 12", "Review": "Excellent display quality here.",
-                 "Rate": "4", "Summary": "Good phone"}
-          result = flipkart_to_reviewlens(raw)
-          assert result["product_identifier"] == "OnePlus 12"
-          assert result["platform"] == "flipkart"
-          assert result["rating"] == 4.0
+        Accepts both "Product Name" and "product_name" headers.
         """
-        pass
+        from data_ingestion.loaders.flipkart_loader import flipkart_to_reviewlens
+        for key in ("Product Name", "product_name"):
+            result = flipkart_to_reviewlens({
+                key: "OnePlus 12",
+                "Review": "Excellent display quality here indeed.",
+                "Rate": "4", "Summary": "Good phone"})
+            assert result["product_identifier"] == "OnePlus 12"
+            assert result["platform"] == "flipkart"
+            assert result["rating"] == 4.0
 
     def test_falls_back_to_summary(self):
         """
         If Review column is empty, Summary must be used.
-        TODO:
-          raw = {"Product Name": "Redmi Note 13", "Review": "",
-                 "Rate": "3", "Summary": "Average battery performance overall."}
-          result = flipkart_to_reviewlens(raw)
-          assert result is not None
         """
-        pass
+        from data_ingestion.loaders.flipkart_loader import flipkart_to_reviewlens
+        result = flipkart_to_reviewlens({
+            "Product Name": "Redmi Note 13", "Review": "",
+            "Rate": "3", "Summary": "Average battery performance overall."})
+        assert result is not None
+        assert "battery" in result["review_text"]

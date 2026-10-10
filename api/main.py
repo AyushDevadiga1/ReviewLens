@@ -19,6 +19,7 @@ from api.services.fake_detector import FakeReviewDetector
 from api.services.absa import ABSAInference
 from api.middleware.auth import APIKeyMiddleware
 from api.middleware.rate_limit import RateLimitMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 from db.session import create_tables
 import time
 
@@ -96,6 +97,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Prometheus metrics at GET /metrics (plain text). Instrumented first so
+# every request is observed; the scrape endpoint itself stays open
+# (auth/rate-limit both skip it — see middleware).
+Instrumentator().instrument(app).expose(app)
 
 # Auth + rate limiting. Starlette runs LAST-added FIRST, so auth checks
 # each request before it can consume rate-limit budget. Both skip /health.

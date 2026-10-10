@@ -52,6 +52,10 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if request.url.path.startswith("/health"):
           return await call_next(request)
 
+        # Prometheus scrape endpoint stays open (infra, not data).
+        if request.url.path == "/metrics":
+          return await call_next(request)
+
         api_key = request.headers.get("X-API-Key")
         if not api_key:
           return JSONResponse(

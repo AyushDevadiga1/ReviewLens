@@ -67,6 +67,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if request.url.path.startswith("/health"):
           return await call_next(request)
 
+        # Prometheus scrape endpoint is never throttled.
+        if request.url.path == "/metrics":
+          return await call_next(request)
+
         limit_key = request.headers.get("X-API-Key")
 
         if not limit_key:

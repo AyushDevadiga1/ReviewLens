@@ -43,12 +43,9 @@ RUN python -m spacy download en_core_web_sm
 # in the HF hub cache (~/.cache/huggingface) — exactly where the runtime
 # loader looks. (A raw curl to /app would be dead weight: no loader reads
 # arbitrary paths.) With HF_HUB_DISABLE_XET=1 above this uses plain HTTP.
-RUN python -c "
-from transformers import AutoModel, AutoTokenizer
-AutoTokenizer.from_pretrained('microsoft/mdeberta-v3-base')
-AutoModel.from_pretrained('microsoft/mdeberta-v3-base')
-print('backbone prefetched into hub cache', flush=True)
-"
+# Single line: bare multi-line quotes break the Dockerfile parser (a line
+# starting with "from" is read as a FROM instruction).
+RUN python -c "from transformers import AutoModel, AutoTokenizer; AutoTokenizer.from_pretrained('microsoft/mdeberta-v3-base'); AutoModel.from_pretrained('microsoft/mdeberta-v3-base'); print('backbone prefetched into hub cache', flush=True)"
 
 # Copy project source (.dockerignore keeps checkpoints/ and mlruns/ out)
 COPY . .

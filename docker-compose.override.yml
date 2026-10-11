@@ -1,0 +1,14 @@
+# Dev override — auto-merged by `docker compose up -d` (never used in prod).
+# Source code rides bind-mounts with auto-reload, so edits apply via
+# `docker compose restart api|frontend` in seconds. Rebuild images ONLY
+# when requirements*.txt or Dockerfiles change.
+services:
+  api:
+    volumes:
+      - ./api:/app/api
+      - ./db:/app/db
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    volumes:
+      - ./frontend:/app/frontend

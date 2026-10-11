@@ -17,20 +17,21 @@ st.set_page_config(page_title="ReviewLens · Overview", layout="wide")
 
 render_sidebar()
 
-# Benchmarks from ml/fake_review/model/metadata.json (held-out 20%
-# of Dataset-SA.csv, 15,001 TF-IDF + rating features). Hardcoded here
-# because model artifacts are not shipped in the frontend image.
+# Benchmarks from ml/fake_review/model/v2/metadata.json (held-out 20%
+# of the 1,600-review Ott fake/genuine corpus). Hardcoded here because
+# model artifacts are not shipped in the frontend image.
 BENCHMARKS = {
-    "accuracy": 0.8773,
-    "f1_weighted": 0.8936,
-    "features": 15001,
-    "dataset": "Dataset-SA.csv",
+    "accuracy": 0.8781,
+    "f1_fake": 0.8807,
+    "precision_fake": 0.8623,
+    "recall_fake": 0.9000,
+    "dataset": "Ott Deceptive Spam v1.4 (1,600 reviews)",
 }
 
 _STAGES = [
     ("Ingest", "offline loaders"),
     ("Clean", "20-char floor"),
-    ("Fake filter", "~5% flagged"),
+    ("Fake filter", "binary model"),
     ("ABSA", "7 aspects"),
     ("Aggregate", "0–10 scores"),
     ("Serve", "API + you"),
@@ -54,16 +55,21 @@ theme.section("Live backend")
 try:
     health = api_health()
 except RuntimeError as exc:
-    st.error(f"Backend unreachable — start the API first. ({exc})")
+    theme.status_dot("alert", "Backend unreachable")
+    st.error(f"Start the API first. ({exc})")
     st.stop()
-c1, c2, c3 = st.columns(3)
-c1.metric("Products in DB", health.get("total_products_in_db", 0))
-c2.metric("Reviews in DB", health.get("total_reviews_in_db", 0))
-c3.metric("Backend", str(health.get("status", "?")).title())
-st.caption(
-    f"Fake detector: {health.get('fake_detector_version', '?')} · "
-    f"ABSA: {health.get('absa_model_version', '?')}"
+theme.status_dot(
+    "live" if health.get("status") == "healthy" else "warn",
+    f"Backend {health.get('status', '?')} · "
+    f"fake detector {health.get('fake_detector_version', '?')} · "
+    f"ABSA {health.get('absa_model_version', '?')}",
 )
+with st.container(border=True):
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Products in DB", health.get("total_products_in_db", 0))
+    c2.metric("Reviews in DB", health.get("total_reviews_in_db", 0))
+    c3.metric("Backend", str(health.get("status", "?")).title())
+st.divider()
 
 theme.section("Why you can trust these numbers (XAI)")
 st.markdown(
@@ -73,10 +79,11 @@ st.markdown(
 c1, c2 = st.columns(2)
 with c1:
     st.markdown(
-        "**Fake filter** — TF-IDF + LogisticRegression sentiment "
-        f"({BENCHMARKS['accuracy']:.1%} accuracy), plus two published "
-        "length rules. Flagged reviews can be re-checked by hand: "
-        "a 5-star review under 30 characters *is* the rule firing."
+        "**Fake filter** — binary TF-IDF + LogisticRegression "
+        f"({BENCHMARKS['accuracy']:.1%} accuracy, "
+        f"{BENCHMARKS['recall_fake']:.0%} fake recall) deciding at "
+        "fake-probability 0.5. Ambiguous one-liners stay genuinely "
+        "uncertain — the verdict trace on Single Product shows why."
     )
 with c2:
     st.markdown(
@@ -92,26 +99,27 @@ with st.expander("Reproducibility notes (for the sceptical)"):
         "so counts are stable run after run.\n"
         "- API pins every ML dependency (`torch`, `transformers`, "
         "`pyabsa`) — the numbers you see are version-locked.\n"
-        "- Known limit, stated plainly: long, elaborate fakes pass the "
-        "length heuristic. The filter catches incentivised one-liners, "
-        "not novels."
+        "- Known limit, stated plainly: the classifier learned on hotel "
+        "reviews, so phone-review transfer runs ~80–85%. Short one-liners "
+        "are genuinely ambiguous even for humans."
     )
 
 theme.section("Model benchmarks")
 fig = theme.style_fig(go.Figure(), height=220)
 fig.add_trace(go.Bar(
-    x=[BENCHMARKS["accuracy"] * 100, BENCHMARKS["f1_weighted"] * 100],
-    y=["Accuracy", "Weighted F1"],
+    x=[BENCHMARKS["accuracy"] * 100, BENCHMARKS["f1_fake"] * 100],
+    y=["Accuracy", "Fake F1"],
     orientation="h",
-    marker_color=[theme.PRIMARY, theme.ACCENT],
-    text=[f"{BENCHMARKS['accuracy']:.1%}", f"{BENCHMARKS['f1_weighted']:.1%}"],
+    marker_color=[theme.PRIMARY, theme.SERIES[1]],
+    text=[f"{BENCHMARKS['accuracy']:.1%}", f"{BENCHMARKS['f1_fake']:.1%}"],
     textposition="inside",
 ))
 fig.update_layout(xaxis=dict(range=[0, 100], title="Percent"))
 st.plotly_chart(fig, use_container_width=True)
 st.caption(
-    f"Sentiment classifier on held-out 20% of {BENCHMARKS['dataset']} "
-    f"({BENCHMARKS['features']:,} features). ABSA is zero-shot "
+    f"Binary fake classifier on held-out 20% of {BENCHMARKS['dataset']} "
+    f"(precision {BENCHMARKS['precision_fake']:.1%}, recall "
+    f"{BENCHMARKS['recall_fake']:.1%}). ABSA is zero-shot "
     "multilingual — no fine-tuning, aspects extracted out of the box."
 )
 
@@ -127,8 +135,9 @@ with st.expander("What happens at each stage?"):
         "**Ingest** — Amazon JSON + Flipkart CSV stream into Postgres; "
         "re-runs never duplicate rows.\n\n"
         "**Clean** — whitespace normalised, sub-20-char reviews dropped.\n\n"
-        "**Fake filter** — extremely positive short reviews flagged "
-        "(5-star one-liners especially); the rest flow on.\n\n"
+        "**Fake filter** — binary classifier decides per review "
+        "(fake-probability > 0.5); a legacy length heuristic survives "
+        "only as fallback where v2 artifacts are absent.\n\n"
         "**ABSA** — aspect terms extracted and mapped to 7 canonical "
         "aspects with sentiment + confidence.\n\n"
         "**Aggregate** — mentions become 0–10 scores, winners and "
@@ -146,3 +155,5 @@ st.markdown(
     "3. **Sentiment Trends** — watch an aspect drift week by week.\n"
     "4. **Pipeline** — the long-form version of the diagram above."
 )
+
+theme.footer()

@@ -19,9 +19,10 @@ except RuntimeError as exc:
     st.error(str(exc))
     st.stop()
 
-c1, c2 = st.columns(2)
-c1.metric("Reviews in database", health.get("total_reviews_in_db", 0))
-c2.metric("Products in database", health.get("total_products_in_db", 0))
+with st.container(border=True):
+    c1, c2 = st.columns(2)
+    c1.metric("Reviews in database", health.get("total_reviews_in_db", 0))
+    c2.metric("Products in database", health.get("total_products_in_db", 0))
 
 last = st.session_state.get("last_analysis")
 if last:
@@ -68,5 +69,8 @@ _STAGES = [
 ]
 
 for title, body in _STAGES:
-    theme.section(title)
-    st.markdown(body)
+    with st.container(border=True):
+        theme.section(title)
+        st.markdown(body)
+
+theme.footer()

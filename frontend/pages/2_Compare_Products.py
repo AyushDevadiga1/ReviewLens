@@ -25,7 +25,7 @@ theme.about(
 
 
 def _render_grouped_bar(by_name: dict, ordered_names: list, axes: list):
-    fig = theme.style_fig(go.Figure())
+    fig = theme.style_fig(go.Figure(), score_bands=True)
     for name in ordered_names:
         scores = {a["display_name"]: a["mean_score"]
                   for a in by_name.get(name, {}).get("aspects", [])}
@@ -90,6 +90,17 @@ if st.button("Compare"):
     render_comparison_table(body)
 
     theme.section("Winners")
+    _counts: dict = {}
+    for _w in body.get("winners", []):
+        _counts[_w["winner"]] = _counts.get(_w["winner"], 0) + 1
+    if _counts:
+        _best = max(_counts, key=_counts.get)
+        st.markdown(
+            f"<div class='glass' style='border-color:#F59E0B'>"
+            f"🏆 <b>{_best}</b> takes {_counts[_best]} of "
+            f"{len(body.get('winners', []))} aspects</div>",
+            unsafe_allow_html=True,
+        )
     for w in body.get("winners", []):
         st.markdown(
             f"**{w['display_name']}** — {w['winner']} "
@@ -103,3 +114,5 @@ if st.button("Compare"):
             "winner − runner-up (0.0 when only one product mentions "
             "the aspect)."
         )
+
+theme.footer()

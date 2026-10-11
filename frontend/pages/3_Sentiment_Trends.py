@@ -50,7 +50,7 @@ def render_trend_overlay(series: dict):
             name=f"{label} mentions",
             opacity=0.25,
         ), secondary_y=True)
-    fig = theme.style_fig(fig)
+    fig = theme.style_fig(fig, score_bands=True)
     fig.update_layout(title="Weekly aspect sentiment + mention volume")
     fig.update_yaxes(title_text="Mean score (0–10)", range=[0, 10],
                      secondary_y=False)
@@ -106,6 +106,10 @@ if st.button("Show Trend"):
     theme.section("Direction")
     for aspect_key, body in series.items():
         direction = body.get("overall_direction", "stable")
+        theme.status_dot(
+            {"improving": "live", "declining": "warn"}.get(direction, "idle"),
+            ASPECTS[aspect_key].get("display_name", aspect_key),
+        )
         st.metric(
             f"{ASPECTS[aspect_key].get('display_name', aspect_key)} direction",
             direction,
@@ -122,3 +126,5 @@ if st.button("Show Trend"):
             "the reverse, else **stable**. Thin bars = few mentions: "
             "treat those weeks as weak signal."
         )
+
+theme.footer()

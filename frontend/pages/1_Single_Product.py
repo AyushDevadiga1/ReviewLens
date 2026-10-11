@@ -54,7 +54,7 @@ def _render_fake_gauge(filt: dict):
 
 def _render_sentiment_dist(aspects: list):
     labels = [a["display_name"] for a in aspects]
-    fig = theme.style_fig(go.Figure())
+    fig = theme.style_fig(go.Figure(), score_bands=True)
     for key, name, color in (("positive_pct", "Positive", theme.SUCCESS),
                              ("neutral_pct", "Neutral", theme.WARN),
                              ("negative_pct", "Negative", theme.DANGER)):
@@ -93,6 +93,12 @@ def _render_fake_trace(text: str, rating: float, flagged: bool):
 def _render_result(body: dict):
     filt = body.get("review_filter", {})
     st.session_state["last_analysis"] = body  # Pipeline page reads this
+
+    if filt.get("fake_count", 0):
+        theme.status_dot("alert",
+                         f"{filt['fake_count']} likely-fake filtered out")
+    else:
+        theme.status_dot("live", "all reviews genuine")
 
     theme.section("Review filter")
     col_a, col_b = st.columns([1, 2])
@@ -167,6 +173,9 @@ def _render_job_panel():
     status = state.get("status", "?")
     total = state.get("progress_total", 0) or 0
     done = state.get("progress_done", 0) or 0
+    dot = {"queued": "idle", "running": "live", "done": "live",
+           "failed": "alert", "cancelled": "warn"}.get(status, "idle")
+    theme.status_dot(dot, f"job {status}")
     if total > 0:
         st.progress(min(done / total, 1.0), text=f"{status} — {done}/{total} reviews")
     else:
@@ -221,9 +230,12 @@ else:
             else:
                 st.toast("Analysis complete", icon="✅")
                 if body.get("review_filter", {}).get("fake_count"):
-                    st.warning("Flagged as a likely fake review — "
-                               "no aspect analysis performed.")
-                    _render_fake_trace(text.strip(), rating, True)
+                        theme.status_dot("alert", "likely fake review")
+                        st.warning("Flagged as a likely fake review — "
+                                   "no aspect analysis performed.")
+                        _render_fake_trace(text.strip(), rating, True)
                 else:
                     _render_fake_trace(text.strip(), rating, False)
                     _render_result(body)
+
+theme.footer()

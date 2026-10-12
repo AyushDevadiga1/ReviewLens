@@ -111,6 +111,23 @@ docker compose build api frontend
 docker compose up -d
 ```
 
+Production (no dev override with `--reload` and code mounts):
+
+```bash
+docker compose -f docker-compose.yml up -d
+```
+
+Existing databases predate the `uq_aspect_mention` constraint —
+`create_tables()` never alters tables, so apply it once manually:
+
+```sql
+-- must return zero rows first:
+SELECT review_id, aspect, sentiment, COUNT(*)
+FROM aspect_sentiments GROUP BY 1, 2, 3 HAVING COUNT(*) > 1;
+ALTER TABLE aspect_sentiments
+  ADD CONSTRAINT uq_aspect_mention UNIQUE (review_id, aspect, sentiment);
+```
+
 ## Data Sources
 
 Live scraping of Amazon and Flipkart was evaluated and abandoned due to dynamic

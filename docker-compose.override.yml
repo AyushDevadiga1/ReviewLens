@@ -7,6 +7,8 @@ services:
     volumes:
       - ./api:/app/api
       - ./db:/app/db
+      # Dev only: live ML code (base compose mounts artifacts alone).
+      - ./ml:/app/ml
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:

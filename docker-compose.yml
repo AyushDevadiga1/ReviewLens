@@ -2,6 +2,16 @@
 # Services: api, db, mlflow, frontend, prometheus, grafana
 # Start everything: docker-compose up
 # Start only backend: docker-compose up api db mlflow
+# Production (no dev override with --reload and code mounts):
+#   docker compose -f docker-compose.yml up -d
+
+# Shared logging cap: json-file driver is unbounded by default and PyABSA
+# prints per inference — without this, long-lived hosts fill their disk.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
 
@@ -24,11 +34,16 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ./ml:/app/ml          # mount trained model artifacts
+      # Model artifacts ONLY — mounting all of ./ml would shadow baked
+      # code with host code (split-brain versions in production).
+      - ./ml/fake_review/model:/app/ml/fake_review/model
       # PyABSA multilingual checkpoint — kept on the host so a container
       # recreate never re-downloads the 810MB model. Fetched once on first
       # boot if the directory is empty.
       - ./checkpoints:/app/checkpoints
+    # Measured peak working set ~2.9GB (ABSA checkpoint resident).
+    mem_limit: 4g
+    logging: *default-logging
     restart: unless-stopped
     healthcheck:
       # python:3.11-slim ships no curl — probe with stdlib instead.
@@ -50,6 +65,7 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    logging: *default-logging
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
@@ -73,6 +89,7 @@ services:
       --port 5000
       --backend-store-uri sqlite:////mlflow/mlflow.db
       --default-artifact-root /mlflow/artifacts
+    logging: *default-logging
     restart: unless-stopped
 
   # ── Streamlit frontend ──────────────────────────────────────────────
@@ -86,7 +103,10 @@ services:
       - API_BASE_URL=http://api:8000
       - API_KEY=${API_KEY_SECRET}
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    mem_limit: 1g
+    logging: *default-logging
     restart: unless-stopped
 
   # ── Prometheus metrics collection ───────────────────────────────────
@@ -101,6 +121,7 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--web.enable-lifecycle'
+    logging: *default-logging
     restart: unless-stopped
 
   # ── Grafana dashboards ───────────────────────────────────────────────
@@ -116,6 +137,7 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
+    logging: *default-logging
     restart: unless-stopped
 
 volumes:

@@ -111,6 +111,39 @@ docker compose build api frontend
 docker compose up -d
 ```
 
+### Why all these services — and the shortcut
+
+Each container earns its place, but not all are required to click through:
+
+| Service | Role | Required? |
+|---|---|---|
+| `db` (Postgres) | stores everything | yes — or use SQLite (below) |
+| `api` (FastAPI) | ML pipeline + jobs + auth | yes |
+| `frontend` (Streamlit) | this dashboard | yes for UI, no for API-only use |
+| `mlflow` | training experiment log | no (training-time only) |
+| `prometheus` + `grafana` | metrics + dashboards | no (observability only) |
+
+**5-minute demo mode (no Docker at all):** SQLite + host processes.
+First run downloads the ABSA checkpoint + spacy model (~2.5 GB,
+one-time, needs network); afterwards it works offline.
+
+```bash
+pip install -r requirements.txt
+python -m spacy download en_core_web_sm
+DATABASE_URL="sqlite:///demo.db" API_KEY_SECRET=demo-key \
+  python -m uvicorn api.main:app --port 8000 &
+API_BASE_URL=http://localhost:8000 API_KEY=demo-key \
+  streamlit run frontend/Overview.py
+```
+(Inline `VAR=value` is bash; on Windows PowerShell set
+`$env:DATABASE_URL`, `$env:API_KEY_SECRET`, `$env:API_BASE_URL`,
+`$env:API_KEY` first, then run the same commands foreground.)
+
+Trade-offs vs Docker: SQLite serialises writes (fine for demos, not for
+concurrent load); no Prometheus/Grafana; models live in `./checkpoints`
+and `./ml/fake_review/model` (both gitignored). Anything you analyse
+lands in `demo.db`, safe to delete.
+
 Production (no dev override with `--reload` and code mounts):
 
 ```bash

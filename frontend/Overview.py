@@ -146,6 +146,22 @@ with st.expander("What happens at each stage?"):
         "this dashboard is a thin client over it."
     )
 
+theme.section("System map")
+st.markdown(
+    "<div class='pipe'>"
+    "<div class='step'><b>You</b><span>browser</span></div>"
+    "<div class='arrow'>→</div>"
+    "<div class='step'><b>Streamlit</b><span>:8501 this dashboard</span></div>"
+    "<div class='arrow'>→</div>"
+    "<div class='step'><b>FastAPI</b><span>:8000 auth + jobs</span></div>"
+    "<div class='arrow'>→</div>"
+    "<div class='step'><b>Postgres</b><span>:5432 data</span></div>"
+    "</div>",
+    unsafe_allow_html=True,
+)
+st.caption("Sidecars: MLflow :5000 (experiments) · Prometheus :9090 scrapes "
+           "/metrics · Grafana :3000 (dashboards). None is needed to analyse.")
+
 theme.section("Start here")
 st.markdown(
     "1. **Single Product** — paste a review or pick a product, "

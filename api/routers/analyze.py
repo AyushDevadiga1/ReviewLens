@@ -40,12 +40,16 @@ def get_absa(request: Request) -> ABSAInference:
 
 
 @router.post("/", response_model=AnalyzeResponse)
-async def analyze_product(
+def analyze_product(
     body: AnalyzeRequest,
     db: Session = Depends(get_db),
     fake_detector: FakeReviewDetector = Depends(get_fake_detector),
     absa: ABSAInference = Depends(get_absa)
 ):
+    # NOTE: plain `def`, not `async def`. This endpoint is CPU-bound for
+    # minutes; async would run it in the event loop and freeze every
+    # sibling request (health, job polls) on our single worker.
+    # Starlette runs sync endpoints in its threadpool instead.
     # ── Mode 2 — single review_text, no DB lookup ──────────────────────────────
     if body.review_text and not body.product_name:
         return run_single_review(

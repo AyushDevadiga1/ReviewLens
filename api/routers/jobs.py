@@ -27,13 +27,14 @@ from api.schemas.response import JobAccepted, JobStatus
 from api.services.analysis_pipeline import (
     run_single_review,
     run_product_analysis,
+    build_partial_response,
     Cancelled,
     ProductNotFoundError,
     NoReviewsError,
     AllFakeError,
 )
 from db.session import SessionLocal, get_db
-from db.models import AnalysisJob
+from db.models import AnalysisJob, Product
 
 logger = logging.getLogger("reviewlens.api.routers.jobs")
 
@@ -96,6 +97,15 @@ def _run_job(job_id: str, fake_detector, absa):
         job = db.get(AnalysisJob, job_id)
         if job is not None:
             job.status = "cancelled"
+            # Salvage: show what did complete instead of an empty cancel.
+            if job.mode == "product" and job.product_name:
+                product = db.query(Product).filter(
+                    Product.name == job.product_name,
+                    Product.platform == job.platform).first()
+                if product is not None:
+                    partial = build_partial_response(db, product.id)
+                    if partial is not None:
+                        job.result_json = partial.model_dump_json()
             db.commit()
     except (ProductNotFoundError, NoReviewsError, AllFakeError) as exc:
         db.rollback()

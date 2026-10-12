@@ -35,6 +35,9 @@ class ReviewFilterSummary(BaseModel):
     fake_count: int
     genuine_count: int
     fake_percentage: float
+    model_fake_prob: Optional[float] = None  # single-review mode only:
+        # the model's fake-probability for that one review (v2 real proba,
+        # v1 heuristic proxy). None in product mode (many reviews).
 
 
 class AnalyzeResponse(BaseModel):

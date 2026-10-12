@@ -72,7 +72,8 @@ def run_single_review(fake_detector, absa, review_text: str, rating: float) -> A
                 total_reviews=1,
                 fake_count=1,
                 genuine_count=0,
-                fake_percentage=100.0
+                fake_percentage=100.0,
+                model_fake_prob=round(fake_result.confidence, 4)
             ),
             aspects=[],
             analyzed_at=datetime.utcnow()
@@ -95,9 +96,48 @@ def run_single_review(fake_detector, absa, review_text: str, rating: float) -> A
             total_reviews=1,
             fake_count=0,
             genuine_count=1,
-            fake_percentage=0.0
+            fake_percentage=0.0,
+            model_fake_prob=round(fake_result.confidence, 4)
         ),
         aspects=build_aspect_scores(aspect_scores),
+        analyzed_at=datetime.utcnow()
+    )
+
+
+def build_partial_response(db: Session, product_id: int) -> AnalyzeResponse | None:
+    """Aggregate whatever aspect/fake rows exist for a product.
+
+    Used when a job is cancelled mid-run: the user sees the partial work
+    instead of an empty "cancelled". Returns None when nothing is stored.
+    """
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if product is None:
+        return None
+
+    total = db.query(Review).filter(Review.product_id == product_id).count()
+    fake_count = db.query(FakeScore).join(
+        Review, FakeScore.review_id == Review.id).filter(
+        Review.product_id == product_id, FakeScore.is_fake.is_(True)).count()
+
+    aspect_rows = db.query(AspectSentiment).join(Review).filter(
+        Review.product_id == product_id).all()
+    aspect_dicts = [
+        {"aspect": a.aspect, "sentiment": a.sentiment,
+         "confidence": a.confidence, "review_date": a.scored_at}
+        for a in aspect_rows
+    ]
+    genuine_count = total - fake_count
+    return AnalyzeResponse(
+        product_id=product.id,
+        product_name=product.name,
+        platform=product.platform,
+        review_filter=ReviewFilterSummary(
+            total_reviews=total,
+            fake_count=fake_count,
+            genuine_count=genuine_count,
+            fake_percentage=round(fake_count / total * 100, 2) if total else 0.0
+        ),
+        aspects=build_aspect_scores(aggregate_product_aspects(aspect_dicts)),
         analyzed_at=datetime.utcnow()
     )
 

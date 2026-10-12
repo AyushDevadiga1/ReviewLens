@@ -69,7 +69,8 @@ def _render_sentiment_dist(aspects: list):
     st.plotly_chart(fig, use_container_width=True)
 
 
-def _render_fake_trace(text: str, rating: float, flagged: bool):
+def _render_fake_trace(text: str, rating: float, flagged: bool,
+                       model_prob=None):
     """Show the checkable facts behind a fake/genuine verdict.
 
     The backend decides with the v2 binary classifier when deployed
@@ -77,8 +78,12 @@ def _render_fake_trace(text: str, rating: float, flagged: bool):
     the legacy v1 heuristic, shown here as a hand cross-check.
     """
     length = len(text.strip())
+    prob_line = (f"- Model fake-probability: **{model_prob:.3f}** "
+                 f"(threshold 0.5)\n" if model_prob is not None
+                 else "- Model fake-probability: not reported\n")
     with st.expander("Why this verdict?"):
         st.markdown(
+            prob_line +
             f"- Text length: **{length}** chars, rating **{rating}★**\n"
             f"- Legacy cross-check — 5★ one-liner (< 30 chars): "
             f"**{'FIRED' if rating >= 5.0 and length < 30 else '—'}**\n"
@@ -155,11 +160,12 @@ def _render_job_panel():
 
     col1, col2 = st.columns(2)
     if col1.button("Check status"):
-        try:
-            st.session_state["job_state"] = api_get(f"/jobs/{job_id}")
-        except RuntimeError as exc:
-            st.error(str(exc))
-            return
+        with st.spinner("Polling job status…"):
+            try:
+                st.session_state["job_state"] = api_get(f"/jobs/{job_id}")
+            except RuntimeError as exc:
+                st.error(str(exc))
+                return
     if col2.button("Cancel job"):
         try:
             st.session_state["job_state"] = api_delete(f"/jobs/{job_id}")
@@ -191,8 +197,14 @@ def _render_job_panel():
     elif status == "failed":
         st.error(f"Job failed: {state.get('error', 'unknown error')}")
     elif status == "cancelled":
-        st.warning("Job cancelled — partial rows already stored stay stored "
-                   "(dedup keeps a re-run clean).")
+        partial = state.get("result")
+        if partial and partial.get("aspects"):
+            st.warning("Job cancelled — showing what completed before "
+                       "the stop. Re-run resumes cleanly via dedup.")
+            _render_result(partial)
+        else:
+            st.warning("Job cancelled — partial rows already stored stay stored "
+                       "(dedup keeps a re-run clean).")
 
 
 mode = st.radio("Input", ["Database product", "Single review text"],
@@ -235,13 +247,14 @@ else:
                 st.error(str(exc))
             else:
                 st.toast("Analysis complete", icon="✅")
+                prob = body.get("review_filter", {}).get("model_fake_prob")
                 if body.get("review_filter", {}).get("fake_count"):
                         theme.status_dot("alert", "likely fake review")
                         st.warning("Flagged as a likely fake review — "
                                    "no aspect analysis performed.")
-                        _render_fake_trace(text.strip(), rating, True)
+                        _render_fake_trace(text.strip(), rating, True, prob)
                 else:
-                    _render_fake_trace(text.strip(), rating, False)
+                    _render_fake_trace(text.strip(), rating, False, prob)
                     _render_result(body)
 
 theme.footer()

@@ -77,8 +77,14 @@ async def health(
         total_reviews  = 0
 
     fake_detector = request.app.state.fake_detector
-    
-    status = "healthy" if database_connected and total_reviews > 0 else "degraded"
+    models_ok = bool(
+        fake_detector.is_ready
+        and request.app.state.absa.is_ready
+    )
+
+    status = "healthy" if (
+        database_connected and total_reviews > 0 and models_ok
+    ) else "degraded"
     
     return HealthResponse(
         status=status,

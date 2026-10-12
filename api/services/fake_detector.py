@@ -90,6 +90,12 @@ class FakeReviewDetector:
         except Exception as e:
             print(f"Error initializing ML artifacts: {str(e)}")
 
+    @property
+    def is_ready(self) -> bool:
+        """True when either model path loaded (for /health)."""
+        v1 = self.vectorizer is not None and self.model is not None
+        return bool(v1 or self.use_v2)
+
     def load_v2_artifacts(self):
         """Load the binary fake classifier. Silent fallback to v1."""
         try:

@@ -44,6 +44,11 @@ class ABSAInference:
                             f"Downstream aspect extraction will fail. Details: {str(e)}")
             self._core = None
 
+    @property
+    def is_ready(self) -> bool:
+        """True when the model backend actually loaded (for /health)."""
+        return self._core is not None
+
     def analyze_review(self, review_text: str):
         """
         Run ABSA on a single genuine review.

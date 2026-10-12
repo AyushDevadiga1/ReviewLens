@@ -431,13 +431,17 @@ def main(filepath: str = "data/Dataset-SA.csv", limit: int = None):
 
     metrics = evaluate(model, X_test, y_test, le)
 
-    log_experiment(
-                    "fake_review_classifier", 
-                    {"model": "LR", "max_features": 15000},
-                    metrics                                  
-                )
-    
+    # Save FIRST: a dead MLflow server must never lose a trained model.
     save_model(model, vectorizer, le, metrics)
+
+    try:
+        log_experiment(
+                        "fake_review_classifier",
+                        {"model": "LR", "max_features": 15000},
+                        metrics
+                    )
+    except Exception as exc:
+        print(f"MLflow logging skipped (server unreachable?): {exc}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

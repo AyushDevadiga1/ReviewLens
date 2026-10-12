@@ -88,11 +88,13 @@ app = FastAPI(
     openapi_url="/openapi.json" if _DOCS_ENABLED else None,
 )
 
-# CORS — allow all origins for development
-# Restrict to your Streamlit URL in production
+# CORS — wildcard is dev-only: browsers reject "*" combined with
+# credentials, so production sets CORS_ORIGINS explicitly.
+_cors_origins = [o.strip() for o in
+                 os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

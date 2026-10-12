@@ -127,6 +127,89 @@ def aggregate_product_aspects(
     return summary_scores
 
 
+def compute_weekly_trend(
+    aspect_sentiments: List[dict],
+    aspect: str,
+    weeks: int = 8
+) -> List[dict]:
+    """
+    Compute weekly sentiment trend for one aspect of one product.
+
+    Args:
+        aspect_sentiments: list of dicts with aspect, sentiment, confidence, review_date
+        aspect: which aspect to filter for
+        weeks: how many weeks of history to return (calendar weeks from today)
+
+    Returns:
+        List of dicts: [{"week": "2026-W01", "mean_score": float, "count": int}]
+
+    TODO:
+      1. Filter aspect_sentiments to only the requested aspect
+      2. Group by ISO week: datetime.isocalendar()[1]
+      2. Compute mean score per week
+      3. Filter to last N calendar weeks from today
+      4. Return sorted list of weekly dicts (oldest first)
+    """
+    
+    if not aspect_sentiments:
+        return []
+
+    # Calculate the cutoff date (N weeks ago from today)
+    cutoff_date = datetime.now() - timedelta(weeks=weeks)
+
+    # 1. Filter metrics down to strictly target the single requested aspect token key
+    filtered_entries = [
+        e for e in aspect_sentiments 
+        if e.get("aspect", "").strip().lower() == aspect.strip().lower()
+    ]
+
+    # Group score vectors by tracking string key names: "YYYY-WXX"
+    weekly_data = defaultdict(list)
+
+    for entry in filtered_entries:
+        raw_date = entry.get("review_date")
+        
+        # Parse timestamp objects safely out of string representations if required
+        if isinstance(raw_date, str):
+            try:
+                dt = datetime.fromisoformat(raw_date.replace("Z", ""))
+            except ValueError:
+                continue  # Skip rows with malformed dates
+        elif isinstance(raw_date, datetime):
+            dt = raw_date
+        else:
+            continue
+
+        # Skip entries older than the cutoff
+        if dt < cutoff_date:
+            continue
+
+        # Extract strict ISO Year and ISO Week tracking tokens
+        iso_year, iso_week, _ = dt.isocalendar()
+        week_key = f"{iso_year}-W{iso_week:02d}"
+        
+        sent = entry.get("sentiment", "neutral")
+        conf = entry.get("confidence", 0.5)
+        score = sentiment_to_score(sent, conf)
+        
+        weekly_data[week_key].append(score)
+
+    trend_list = []
+
+    # 2. Build aggregated data list maps
+    for week_str, scores in weekly_data.items():
+        trend_list.append({
+            "week": week_str,
+            "mean_score": round(float(np.mean(scores)), 2),
+            "review_count": len(scores)
+        })
+
+    # 3. Return sorted elements sequentially (Oldest week key string first)
+    trend_list.sort(key=lambda x: x["week"])
+    
+    # Return all weeks (already filtered by cutoff_date)
+    return trend_list
+
 
 def compute_winner_per_aspect(
     product_scores: Dict[str, Dict[str, dict]]
@@ -177,79 +260,3 @@ def compute_winner_per_aspect(
             winners[aspect] = best_product
 
     return winners
-
-
-def compute_weekly_trend(
-    aspect_sentiments: List[dict],
-    aspect: str,
-    weeks: int = 8
-) -> List[dict]:
-    """
-    Compute weekly sentiment trend for one aspect of one product.
-
-    Args:
-        aspect_sentiments: list of dicts with aspect, sentiment, confidence, review_date
-        aspect: which aspect to filter for
-        weeks: how many weeks of history to return
-
-    Returns:
-        List of dicts: [{"week": "2026-W01", "mean_score": float, "count": int}]
-
-    TODO:
-      1. Filter aspect_sentiments to only the requested aspect
-      2. Group by ISO week: datetime.isocalendar()[1]
-      3. Compute mean score per week
-      4. Return sorted list of weekly dicts (oldest first)
-    """
-    
-    if not aspect_sentiments:
-        return []
-
-    # 1. Filter metrics down to strictly target the single requested aspect token key
-    filtered_entries = [
-        e for e in aspect_sentiments 
-        if e.get("aspect", "").strip().lower() == aspect.strip().lower()
-    ]
-
-    # Group score vectors by tracking string key names: "YYYY-WXX"
-    weekly_data = defaultdict(list)
-
-    for entry in filtered_entries:
-        raw_date = entry.get("review_date")
-        
-        # Parse timestamp objects safely out of string representations if required
-        if isinstance(raw_date, str):
-            try:
-                dt = datetime.fromisoformat(raw_date.replace("Z", ""))
-            except ValueError:
-                continue  # Skip rows with malformed dates
-        elif isinstance(raw_date, datetime):
-            dt = raw_date
-        else:
-            continue
-
-        # Extract strict ISO Year and ISO Week tracking tokens
-        iso_year, iso_week, _ = dt.isocalendar()
-        week_key = f"{iso_year}-W{iso_week:02d}"
-        
-        sent = entry.get("sentiment", "neutral")
-        conf = entry.get("confidence", 0.5)
-        score = sentiment_to_score(sent, conf)
-        
-        weekly_data[week_key].append(score)
-
-    trend_list = []
-
-    # 2. Build aggregated data list maps
-    for week_str, scores in weekly_data.items():
-        trend_list.append({
-            "week": week_str,
-            "mean_score": round(float(np.mean(scores)), 2),
-            "review_count": len(scores)
-        })
-
-    # 3. Return sorted elements sequentially (Oldest week key string first)
-    trend_list.sort(key=lambda x: x["week"])
-    
-    # Return up to the maximum number of requested window historical snapshots
-    return trend_list[-weeks:]

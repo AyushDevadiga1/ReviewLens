@@ -17,6 +17,7 @@ import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -153,6 +154,24 @@ async def submit_analyze_job(
         request.app.state.absa,
     )
     return JobAccepted(job_id=job.id, status="queued")
+
+
+@router.get("/latest", response_model=JobStatus)
+async def get_latest_job(db: Session = Depends(get_db)):
+    """Get the most recently completed analysis job.
+
+    NOTE: declared BEFORE /{job_id} — FastAPI matches in order, so a
+    literal route must precede the parameterised one or "latest" would
+    be captured as a job id.
+    """
+    job = db.query(AnalysisJob).filter(
+        AnalysisJob.status == "done"
+    ).order_by(AnalysisJob.created_at.desc()).first()
+
+    if job is None:
+        raise HTTPException(404, "No completed analysis jobs found.")
+
+    return _to_status(job)
 
 
 @router.get("/{job_id}", response_model=JobStatus)

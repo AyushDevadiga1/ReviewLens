@@ -72,18 +72,14 @@ class AspectSentiment(Base):
 
     review : Mapped["Review"] = relationship("Review", back_populates="aspect_sentiments")
 
+    # Backstop against concurrent re-analyzes: the application-level
+    # dedup is check-then-insert (racy by nature). The constraint turns
+    # a silent duplication into a catchable IntegrityError.
+    __table_args__ = (
+        UniqueConstraint("review_id", "aspect", "sentiment",
+                         name="uq_aspect_mention"),
+    )
 
-class ApiLog(Base):
-    """One row per API request."""
-    __tablename__ = "api_logs"
-
-    id           : Mapped[int]      = mapped_column(Integer, primary_key=True)
-    endpoint     : Mapped[str]      = mapped_column(String(200))
-    method       : Mapped[str]      = mapped_column(String(10))
-    api_key_hash : Mapped[str]      = mapped_column(String(64))
-    status_code  : Mapped[int]      = mapped_column(Integer)
-    latency_ms   : Mapped[float]    = mapped_column(Float)
-    requested_at : Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 class AnalysisJob(Base):
     """One row per async analysis run. Workers update progress here;

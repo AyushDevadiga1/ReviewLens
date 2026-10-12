@@ -11,6 +11,7 @@ failed-job rows. Cancel/progress hooks are no-ops when not provided.
 from datetime import datetime
 from typing import Callable, List, Optional
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.schemas.response import (
@@ -158,17 +159,28 @@ def run_product_analysis(
     genuine_ids   = [review_ids[i] for i in genuine_indices]
 
     # ── Store FakeScore rows ───────────────────────────────────────────────────
+    # Bulk pre-check (one query, not N) for the common case; SAVEPOINT per
+    # insert for the residual race — a concurrent run's row then rolls back
+    # to the savepoint instead of killing the whole transaction.
+    seen_fake_ids = {
+        row_id for (row_id,) in db.query(FakeScore.review_id).filter(
+            FakeScore.review_id.in_(review_ids)).all()
+    }
     for i, result in enumerate(fake_results):
-        existing = db.query(FakeScore).filter(
-            FakeScore.review_id == review_ids[i]
-        ).first()
-        if not existing:
-            db.add(FakeScore(
-                review_id=review_ids[i],
-                is_fake=result.is_fake,
-                confidence=result.confidence,
-                model_version=result.model_version
-            ))
+        if review_ids[i] in seen_fake_ids:
+            continue
+        try:
+            with db.begin_nested():
+                db.add(FakeScore(
+                    review_id=review_ids[i],
+                    is_fake=result.is_fake,
+                    confidence=result.confidence,
+                    model_version=result.model_version
+                ))
+                db.flush()
+            seen_fake_ids.add(review_ids[i])
+        except IntegrityError:
+            pass  # lost the race; the row exists
     db.commit()
 
     if cancelled():
@@ -185,24 +197,35 @@ def run_product_analysis(
         progress(min(start + len(chunk), len(reviews)), len(reviews))
 
     # ── Store AspectSentiment rows ─────────────────────────────────────────────
-    # Dedup on (review_id, aspect, sentiment) — same pattern as FakeScore above.
+    # Same pattern: bulk pre-check on (review, aspect, sentiment) plus
+    # savepoint-tolerant inserts, backed by the uq_aspect_mention constraint.
     # Re-analyzing a product must not multiply aspect mentions in aggregation.
+    seen_aspects = {
+        (row_rev, row_asp, row_sent) for (row_rev, row_asp, row_sent) in db.query(
+            AspectSentiment.review_id, AspectSentiment.aspect,
+            AspectSentiment.sentiment
+        ).join(Review, AspectSentiment.review_id == Review.id).filter(
+            Review.product_id == product.id).all()
+    }
     for review_id, absa_result in zip(genuine_ids, absa_results):
         aspects = getattr(absa_result, "aspects", []) or []
         for aspect_mention in aspects:
-            existing_aspect = db.query(AspectSentiment).filter(
-                AspectSentiment.review_id == review_id,
-                AspectSentiment.aspect == aspect_mention.aspect,
-                AspectSentiment.sentiment == aspect_mention.sentiment
-            ).first()
-            if not existing_aspect:
-                db.add(AspectSentiment(
-                    review_id=review_id,
-                    aspect=aspect_mention.aspect,
-                    sentiment=aspect_mention.sentiment,
-                    confidence=aspect_mention.confidence,
-                    model_version="pyabsa-multilingual"
-                ))
+            key = (review_id, aspect_mention.aspect, aspect_mention.sentiment)
+            if key in seen_aspects:
+                continue
+            try:
+                with db.begin_nested():
+                    db.add(AspectSentiment(
+                        review_id=review_id,
+                        aspect=aspect_mention.aspect,
+                        sentiment=aspect_mention.sentiment,
+                        confidence=aspect_mention.confidence,
+                        model_version="pyabsa-multilingual"
+                    ))
+                    db.flush()
+                seen_aspects.add(key)
+            except IntegrityError:
+                pass  # lost the race; the row exists
     db.commit()
 
     # ── Aggregate aspect scores ────────────────────────────────────────────────

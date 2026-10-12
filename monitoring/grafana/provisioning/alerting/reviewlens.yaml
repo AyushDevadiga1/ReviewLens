@@ -1,4 +1,4 @@
-apiVersion: 1
+﻿apiVersion: 1
 
 # Unified-alerting rules, evaluated every 60 s. No contact points are
 # provisioned on purpose: rules still evaluate and their FIRING/PENDING
@@ -23,13 +23,10 @@ groups:
         data:
           - refId: A
             relativeTimeRange: { from: 300, to: 0 }
-            datasourceUid: prometheus
+            datasourceUid: PBFA97CFB590B2093
             model:
               refId: A
-              expr: >-
-                ((sum(rate(http_requests_total{status!~"2.."}[5m]))
-                  or vector(0))
-                / sum(rate(http_requests_total[5m]))
+              expr: sum(rate(http_requests_total{status!~"2.."}[5m])) / sum(rate(http_requests_total[5m]))
           - refId: C
             datasourceUid: __expr__
             model:
@@ -50,7 +47,7 @@ groups:
         data:
           - refId: A
             relativeTimeRange: { from: 300, to: 0 }
-            datasourceUid: prometheus
+            datasourceUid: PBFA97CFB590B2093
             model:
               refId: A
               expr: >-

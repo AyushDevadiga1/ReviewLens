@@ -66,7 +66,7 @@ def stream_mcauley_file(filepath: str) -> Iterator[dict]:
       for line in f:
         try:
           yield json.loads(line.decode("utf-8"))
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
           continue
 
 

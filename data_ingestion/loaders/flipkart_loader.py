@@ -24,6 +24,7 @@ Usage:
 
 import csv
 import argparse
+import re
 from typing import Optional
 from data_ingestion.cleaner import clean_review_text, extract_review_metadata
 from db.session import get_session_factory
@@ -105,9 +106,13 @@ def flipkart_to_reviewlens(raw: dict) -> Optional[dict]:
     # Header variant tolerance: the Kaggle file uses "Product Name", but
     # cleaned copies circulate with "product_name". Either must work —
     # an empty identifier silently drops the row downstream.
-    final_dict["product_identifier"] = (
-        raw.get("Product Name") or raw.get("product_name") or ""
-    ).strip()
+    raw_name = (raw.get("Product Name") or raw.get("product_name") or "")
+    # Strip mojibake runs ("??????" from double-encoded source rows) and
+    # collapse the leftover whitespace — they otherwise pollute every
+    # dropdown, legend and table downstream.
+    clean_name = re.sub(r"\?{2,}", "", raw_name)
+    clean_name = re.sub(r"\s+", " ", clean_name).strip()
+    final_dict["product_identifier"] = clean_name
     final_dict["platform"] = "flipkart"
 
     # 6. Return the final dict

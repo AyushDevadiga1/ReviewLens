@@ -121,12 +121,16 @@ def _render_result(body: dict):
         return
 
     theme.section("Aspect scores")
-    render_radar_chart(
-        [{"name": body.get("product_name", "review"),
-          "scores": {a["display_name"]: a["mean_score"] for a in aspects}}],
-        [a["display_name"] for a in aspects],
-    )
-    _render_sentiment_dist(aspects)
+    if filt.get("total_reviews", 0) == 1:
+        st.caption("Single review — charts need more than one mention to "
+                   "mean anything, so here is just the table.")
+    else:
+        render_radar_chart(
+            [{"name": body.get("product_name", "review"),
+              "scores": {a["display_name"]: a["mean_score"] for a in aspects}}],
+            [a["display_name"] for a in aspects],
+        )
+        _render_sentiment_dist(aspects)
     st.dataframe(
         pd.DataFrame([{
             "Aspect": a["display_name"],

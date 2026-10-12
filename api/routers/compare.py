@@ -100,7 +100,7 @@ async def compare_products(
         product_scores[product.name] = scores
 
     winners_by_aspect = compute_winner_per_aspect(product_scores)
-    
+
     winner_list = []
     for aspect, winning_product in winners_by_aspect.items():
         display_name = ASPECTS.get(aspect, {}).get("display_name", aspect.title())
@@ -120,6 +120,9 @@ async def compare_products(
             winning_score=round(winning_score, 2),
             margin=round(winning_score - second_best, 2)
         ))
+
+    # Deterministic order, biggest margin first — dict iteration is arbitrary.
+    winner_list.sort(key=lambda w: w.margin, reverse=True)
 
     return CompareResponse(
             products=comparisons,

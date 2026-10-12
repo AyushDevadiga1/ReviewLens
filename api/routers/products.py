@@ -17,7 +17,7 @@ from api.schemas.request import SearchRequest
 from api.schemas.response import ProductSearchResult
 from db.session import get_db
 from db.models import Product, Review
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
@@ -61,7 +61,10 @@ async def search_products(
         Product.platform,
         func.count(Review.id).label("review_count")
     ).outerjoin(Review, Review.product_id == Product.id)\
-     .filter(Product.name.ilike(f"%{request.query}%"))\
+     .filter(or_(
+         Product.name.ilike(f"%{request.query}%"),
+         Product.platform.ilike(f"%{request.query}%"),
+     ))\
      .group_by(Product.id, Product.name, Product.platform)
     
     if request.platform:

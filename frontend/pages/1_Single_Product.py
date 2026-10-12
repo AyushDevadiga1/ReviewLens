@@ -219,6 +219,8 @@ if mode == "Database product":
 else:
     text = st.text_area("Review text (min 20 characters)",
                         placeholder="Battery lasts two days, camera is fine…")
+    st.caption("Tip: press Ctrl+Enter (or click outside the box) to apply "
+               "your text — the Analyze button reads the applied value.")
     rating = st.slider("Star rating", 1.0, 5.0, 4.0, 0.5)
     if st.button("Analyze", disabled=len(text.strip()) < 20):
         with st.spinner("Running fake detection + ABSA…"):

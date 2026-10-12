@@ -53,6 +53,10 @@ def _headers() -> dict:
 
 def _checked(response: requests.Response) -> dict:
     """Return parsed JSON, or raise with the server's own error detail."""
+    if response.status_code == 429:
+        raise RuntimeError(
+            "API 429: rate limited (100 req/min) — wait a few seconds "
+            "and press the button again, don't spam-click.")
     if response.status_code >= 400:
         try:
             detail = response.json().get("detail", response.text)

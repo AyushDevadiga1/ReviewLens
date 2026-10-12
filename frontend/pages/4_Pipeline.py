@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from components.api_client import api_health
+from components.api_client import api_health, api_get
 from components.sidebar import render_sidebar
 from components import theme
 
@@ -24,7 +24,15 @@ with st.container(border=True):
     c1.metric("Reviews in database", health.get("total_reviews_in_db", 0))
     c2.metric("Products in database", health.get("total_products_in_db", 0))
 
-last = st.session_state.get("last_analysis")
+# Fetch latest completed analysis from API
+try:
+    latest_job = api_get("/jobs/latest")
+except RuntimeError as exc:
+    st.warning(f"Could not fetch latest analysis: {exc}")
+    last = None
+else:
+    last = latest_job
+
 if last:
     filt = last.get("review_filter", {})
     st.success(

@@ -8,3 +8,6 @@ font = "sans serif"
 [client]
 toolbarMode = "minimal"
 showSidebarNavigation = true
+
+[browser]
+gatherUsageStats = false

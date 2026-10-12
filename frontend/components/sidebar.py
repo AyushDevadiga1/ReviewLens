@@ -36,11 +36,22 @@ def render_sidebar():
         theme.status_dot("alert", "API unreachable", container=st.sidebar)
         st.sidebar.caption(str(exc)[:120])
 
-    st.sidebar.text_input(
+    # API key override - persist via query params so it survives refresh
+    existing = st.query_params.get("api_key", "")
+    key = st.sidebar.text_input(
         "X-API-Key (blank = use env)",
-        value=st.session_state.get("api_key_override", ""),
+        value=existing,
         type="password",
         key="api_key_override",
         on_change=lambda: st.cache_data.clear(),
         help="Changing the key clears cached API responses.",
     )
+    if key != existing:
+        st.query_params["api_key"] = key
+        st.cache_data.clear()
+
+    # Show which key is active
+    if key:
+        st.sidebar.caption("Using override key")
+    else:
+        st.sidebar.caption("Using env key")

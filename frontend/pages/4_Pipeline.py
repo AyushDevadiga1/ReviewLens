@@ -25,23 +25,23 @@ with st.container(border=True):
     c2.metric("Products in database", health.get("total_products_in_db", 0))
 
 # Fetch latest completed analysis from API
+last = None
 try:
-    latest_job = api_get("/jobs/latest")
+    last = api_get("/jobs/latest")
 except RuntimeError as exc:
-    st.warning(f"Could not fetch latest analysis: {exc}")
-    last = None
-else:
-    last = latest_job
+    # 404 = no jobs run yet; any other error is worth surfacing
+    if "404" not in str(exc):
+        st.warning(f"Could not fetch latest analysis: {exc}")
 
 if last:
     filt = last.get("review_filter", {})
     st.success(
-        f"Last analysis ({last.get('product_name', '?')}): "
+        f"Last analysis — **{last.get('product_name', '?')}**: "
         f"{filt.get('genuine_count', 0)}/{filt.get('total_reviews', 0)} "
         f"genuine, {len(last.get('aspects', []))} aspects scored."
     )
 else:
-    st.info("Run an analysis on the Single Product page — "
+    st.info("Run an analysis on the **Single Product** page — "
             "its numbers will appear here.")
 
 _STAGES = [

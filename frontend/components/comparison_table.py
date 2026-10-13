@@ -9,31 +9,22 @@ import streamlit as st
 from typing import List
 
 
-def _score_to_emoji(score: float) -> str:
-    """Map a 0–10 score to a colour emoji for quick visual scanning."""
+from components.api_client import get_friendly_name
+
+
+def _score_to_label(score: float) -> str:
+    """Map a 0–10 score to a formal text label for professional display."""
     if score >= 7.0:
-        return "🟢"
+        return "[HIGH]"
     elif score >= 4.0:
-        return "🟡"
-    return "🔴"
+        return "[MED]"
+    return "[LOW]"
 
 
 def render_comparison_table(compare_response: dict):
     """
     Render a side-by-side aspect score table with a winner column.
-
-    Args:
-        compare_response: the JSON body from GET /compare, shaped as:
-            {
-              "products": [
-                {"product_name": str, "aspects": [{"aspect": str, "display_name": str,
-                                                    "mean_score": float, ...}]},
-                ...
-              ],
-              "winners": [{"aspect": str, "display_name": str, "winner": str, ...}]
-            }
     """
-
     products = compare_response.get("products", [])
     winners = {w["aspect"]: w["winner"] for w in compare_response.get("winners", [])}
     if not products:
@@ -50,12 +41,14 @@ def render_comparison_table(compare_response: dict):
     for aspect_key, label in aspect_labels.items():
         row = {}
         for product in products:
+            col_name = get_friendly_name(product["product_name"])
             scores = {a["aspect"]: a["mean_score"] for a in product.get("aspects", [])}
             score = scores.get(aspect_key)
-            row[product["product_name"]] = (
-                f"{_score_to_emoji(score)} {score:.1f}" if score is not None else "—"
+            row[col_name] = (
+                f"{_score_to_label(score)} {score:.1f} / 10" if score is not None else "—"
             )
-        row["Winner"] = winners.get(aspect_key, "—")
+        win_prod = winners.get(aspect_key, "—")
+        row["Winner"] = get_friendly_name(win_prod) if win_prod != "—" else "—"
         rows[label] = row
 
     df = pd.DataFrame(rows).T
@@ -64,10 +57,11 @@ def render_comparison_table(compare_response: dict):
     # Which product wins the most aspects?
     win_counts = {}
     for winner in winners.values():
-        win_counts[winner] = win_counts.get(winner, 0) + 1
+        w_name = get_friendly_name(winner)
+        win_counts[w_name] = win_counts.get(w_name, 0) + 1
     if win_counts:
         best = max(win_counts, key=win_counts.get)
         st.caption(
-            f"{best} wins {win_counts[best]} of {len(winners)} aspects. "
-            f"Margins are in the API response (`winning_score` − runner-up)."
+            f"**{best}** leads across {win_counts[best]} of {len(winners)} aspect dimensions. "
+            f"Score legend: [HIGH] = 7.0–10.0 | [MED] = 4.0–6.9 | [LOW] = 0.0–3.9"
         )

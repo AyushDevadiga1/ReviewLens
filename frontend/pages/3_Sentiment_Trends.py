@@ -4,12 +4,11 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from streamlit_searchbox import st_searchbox
-
 from components.api_client import (
     api_get,
-    product_search_options,
-    take_product_match,
+    cached_get,
+    get_friendly_name,
+    format_product_label,
     ASPECTS,
 )
 from components.sidebar import render_sidebar
@@ -19,14 +18,12 @@ st.set_page_config(page_title="ReviewLens · Trends", layout="wide")
 
 render_sidebar()
 theme.hero("Sentiment Trends",
-           "Watch aspects drift week by week — volume bars keep thin "
-           "weeks honest.")
+           "Track weekly sentiment trajectory and drift per aspect dimension with mention volume verification.")
 theme.about(
     "GET /trends/?product_id=&aspect=&weeks=",
-    "Mentions bucket by ISO week (review date when known, analysis time "
-    "otherwise), scored 0–10 and averaged. Direction thresholds: "
-    "±0.5 last-minus-first. Bars are mention counts — thin bars mean "
-    "weak signal, whatever the line says.",
+    "Aggregates aspect mentions into ISO calendar weeks based on original review dates. "
+    "Calculates 0–10 mean sentiment scores to identify improving, declining, or stable quality trends. "
+    "Underlying mention volume bars help distinguish high-confidence signals from thin data weeks.",
 )
 
 
@@ -42,48 +39,96 @@ def render_trend_overlay(series: dict):
             x=[w["week"] for w in points],
             y=[w["mean_score"] for w in points],
             mode="lines+markers",
-            name=f"{label} score",
+            name=f"{label} score (0–10)",
+            line=dict(width=3),
+            marker=dict(size=8),
         ), secondary_y=False)
         fig.add_trace(go.Bar(
             x=[w["week"] for w in points],
             y=[w.get("review_count", 0) for w in points],
-            name=f"{label} mentions",
-            opacity=0.25,
+            name=f"{label} volume",
+            opacity=0.2,
         ), secondary_y=True)
     fig = theme.style_fig(fig, score_bands=True)
-    fig.update_layout(title="Weekly aspect sentiment + mention volume")
-    fig.update_yaxes(title_text="Mean score (0–10)", range=[0, 10],
-                     secondary_y=False)
-    fig.update_yaxes(title_text="Mentions", secondary_y=True)
+    fig.update_layout(
+        title="Weekly Aspect Sentiment Trajectory vs Review Volume",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    fig.update_yaxes(title_text="Mean Score (0–10)", range=[0, 10.5], secondary_y=False)
+    fig.update_yaxes(title_text="Weekly Mentions", secondary_y=True)
     st.plotly_chart(fig, use_container_width=True)
 
 
-pick = st_searchbox(
-    lambda term: product_search_options(term, "trend_product_options"),
-    label="Type to search products…",
-    placeholder="OnePlus, B0002, bullets…",
-    key="trend_product_search",
-)
-match = take_product_match(pick, "trend_product_options")
-if match is None:
-    st.info("Search and pick a product to begin.")
+try:
+    catalog = cached_get("/products/")
+except Exception:
+    catalog = []
+
+if not catalog:
+    st.info("No products found in the database. Ensure database is connected.")
     st.stop()
+
+# Sort so analyzed products are listed first, then by review count
+sorted_catalog = sorted(
+    catalog,
+    key=lambda x: (x.get("aspect_count", 0) == 0, -x.get("review_count", 0))
+)
+options_map = {}
+for p in sorted_catalog:
+    label = format_product_label(p)
+    options_map[label] = p
+
+selected_label = st.selectbox(
+    "Select product to analyze trends:",
+    options=list(options_map.keys()),
+    help="Select any stored product. Products tagged [Analyzed] have active sentiment timelines.",
+    key="trend_product_select"
+)
+match = options_map.get(selected_label)
+if match is None:
+    st.info("Please select a product to begin.")
+    st.stop()
+
 product_id = match["product_id"]
+friendly_title = get_friendly_name(match["product_name"])
+is_analyzed = match.get("aspect_count", 0) > 0
+
+if not is_analyzed:
+    st.warning(
+        f"**{friendly_title}** has not been analyzed yet. "
+        "Please run **Single Product** analysis first to extract aspect sentiments before viewing trends."
+    )
+
 aspect_options = {ASPECTS[k].get("display_name", k): k for k in ASPECTS}
+available_aspect_labels = list(aspect_options.keys())
+valid_defaults = [lbl for lbl in ["Build Quality", "Battery Life"] if lbl in available_aspect_labels]
+if not valid_defaults and available_aspect_labels:
+    valid_defaults = [available_aspect_labels[0]]
+
 aspect_labels = st.multiselect(
-    "Aspects (overlay up to 3)",
-    list(aspect_options.keys()),
-    default=["Battery Life"],
+    "Aspect dimensions to track (overlay up to 3):",
+    options=available_aspect_labels,
+    default=valid_defaults,
     max_selections=3,
 )
 aspect_keys = [aspect_options[label] for label in aspect_labels]
-if not aspect_keys:
-    st.info("Select at least one aspect.")
-    st.stop()
-weeks = st.slider("Weeks of history", 1, 52, 8)
 
-if st.button("Show Trend"):
-    with st.spinner("Computing weekly trend…"):
+col_slider, col_btn = st.columns([3, 1])
+with col_slider:
+    weeks = st.slider("Lookback window (weeks of history):", 4, 104, 52)
+with col_btn:
+    st.write("")
+    st.write("")
+    show_clicked = st.button("Compute Trend", type="primary", use_container_width=True, disabled=not is_analyzed)
+
+if show_clicked or is_analyzed:
+    if not aspect_keys:
+        st.info("Select at least one aspect dimension above.")
+        st.stop()
+
+    import time
+    t0 = time.time()
+    with st.spinner("Computing weekly aspect sentiment trajectory..."):
         series = {}
         for aspect_key in aspect_keys:
             try:
@@ -92,39 +137,37 @@ if st.button("Show Trend"):
                     "aspect": aspect_key,
                     "weeks": weeks,
                 })
-            except RuntimeError as exc:
-                st.error(f"{ASPECTS[aspect_key].get('display_name', aspect_key)}: {exc}")
+                series[aspect_key] = body
+            except RuntimeError:
                 continue
-            series[aspect_key] = body
-    if not series:
-        st.stop()
-    st.toast("Trend ready", icon="✅")
+    elapsed = time.time() - t0
 
-    theme.section("Chart")
+    if not series:
+        st.info(f"No weekly mention data found for selected aspects in {friendly_title}. Try selecting different aspects.")
+        st.stop()
+
+    theme.section(f"Sentiment Timeline — {friendly_title}")
+    st.caption(f"Retrieved in {elapsed:.2f}s | {weeks}-week lookback window")
     render_trend_overlay(series)
 
-    theme.section("Direction")
-    for aspect_key, body in series.items():
-        direction = body.get("overall_direction", "stable")
-        theme.status_dot(
-            {"improving": "live", "declining": "warn"}.get(direction, "idle"),
-            ASPECTS[aspect_key].get("display_name", aspect_key),
-        )
-        st.metric(
-            f"{ASPECTS[aspect_key].get('display_name', aspect_key)} direction",
-            direction,
-        )
-        if direction == "declining":
-            st.warning("Sentiment for this aspect is declining "
-                       "over the selected window.")
+    theme.section("Aspect Direction & Momentum")
+    dir_cols = st.columns(len(series))
+    for idx, (aspect_key, body) in enumerate(series.items()):
+        with dir_cols[idx]:
+            direction = body.get("overall_direction", "stable").upper()
+            disp_name = ASPECTS.get(aspect_key, {}).get("display_name", aspect_key)
+            pts = body.get("trend", [])
+            latest_score = pts[-1]["mean_score"] if pts else 0.0
 
-    with st.expander("How is the trend computed?"):
-        st.markdown(
-            "Mentions are bucketed by ISO week (review date when known, "
-            "otherwise analysis time), scored 0–10 and averaged. "
-            "**Improving** means last − first week > 0.5, **declining** "
-            "the reverse, else **stable**. Thin bars = few mentions: "
-            "treat those weeks as weak signal."
-        )
+            # Formal direction indicator: arrow symbols + text
+            direction_symbol = {"IMPROVING": "+", "DECLINING": "-", "STABLE": "="}.get(direction, "?")
+            delta_label = f"{direction_symbol} {direction.capitalize()}"
+            st.metric(
+                label=disp_name,
+                value=f"{latest_score:.1f}/10",
+                delta=delta_label,
+                delta_color="normal" if direction == "IMPROVING" else ("inverse" if direction == "DECLINING" else "off")
+            )
+            st.caption(f"{len(pts)} active weekly data points")
 
 theme.footer()

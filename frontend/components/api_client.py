@@ -115,14 +115,19 @@ def product_search_options(term: str, stash_key: str) -> list:
 
     Returns display labels; stashes the label→product mapping in
     session state under stash_key (one key per searchbox instance).
-    Short terms and API misses yield [] — an empty dropdown, not an error.
+    Short terms and empty results yield [] — an empty dropdown, not an
+    error. Auth failures are the exception: a wrong key would otherwise
+    look exactly like "no products", so they surface loudly instead.
     """
     term = term.strip()
     if len(term) < 2:
         return []
     try:
         results = cached_get("/products/search", (("query", term),))
-    except RuntimeError:
+    except RuntimeError as exc:
+        if "401" in str(exc):
+            st.error("API key rejected — set API_KEY to match the "
+                     "server's API_KEY_SECRET, then rerun.")
         return []
     opts = {
         f"{p['product_name']} ({p['platform']}, "
@@ -138,3 +143,40 @@ def take_product_match(label: str, stash_key: str):
     if not label:
         return None
     return st.session_state.get(stash_key, {}).get(label)
+
+
+FRIENDLY_PRODUCT_NAMES = {
+    "7508492919": "Rhinestone Bling Protective Phone Case",
+    "7887421268": "Ultra-Slim Flexible TPU Phone Case",
+    "8288853439": "Rapid Wall Charger & Sync Cable",
+    "961301375X": "Heavy-Duty Fast Charging Long Cord",
+    "8288878881": "10000mAh Ultra-Slim Portable Power Bank",
+    "9707716371": "True Wireless Noise-Cancelling Earbuds",
+    "8288862993": "9H Hardness Tempered Glass (3-Pack)",
+    "7532385086": "Shockproof Rugged Dual-Layer Armor Case",
+    "9658231969": "30W Dual-Port USB-C Fast Wall Adapter",
+    "9707716436": "Sweatproof Sports Bluetooth Earphones",
+    "9678315173": "Water-Resistant Running Fitness Armband",
+    "828886922X": "Matte Privacy Screen Filter Shield",
+    "9578085451": "Dual-Layer Kickstand Armor Protective Case",
+    "9713957334": "3-in-1 Retractable Multi Charging Cable",
+    "8199900164": "360-Degree Magnetic Ring Grip Holder",
+    "9652676748": "Deep Bass In-Ear Stereo Headset with Mic",
+    "9638762632": "Qi Wireless Fast Charging Desktop Stand",
+}
+
+
+def get_friendly_name(raw_name: str) -> str:
+    """Translate raw ASIN codes into meaningful consumer product titles."""
+    raw = str(raw_name).strip()
+    return FRIENDLY_PRODUCT_NAMES.get(raw, f"Product {raw}")
+
+
+def format_product_label(p: dict) -> str:
+    """Human-readable product label for selectboxes and multiselects."""
+    raw_name = str(p.get("product_name", "")).strip()
+    friendly = get_friendly_name(raw_name)
+    tag = "Analyzed" if p.get("aspect_count", 0) > 0 else "Not analyzed"
+    plat = p.get("platform", "amazon").upper()
+    revs = p.get("review_count", 0)
+    return f"[{plat}] {friendly} (ASIN: {raw_name} · {revs} reviews) · [{tag}]"

@@ -113,6 +113,13 @@ $env:API_KEY = "demo-key"
 
 Open http://localhost:8501. Your analyses land in `demo.db` (safe to delete).
 
+> **One key everywhere, or silent 401s.** The API hashes `API_KEY_SECRET`
+> and the dashboard sends `API_KEY` — these two values must be identical
+> or every data call fails authentication and dropdowns render empty.
+> `demo.py` sets both sides consistently; if you launch manually, keep the
+> two terminals on the same secret. A red "API key rejected" banner in the
+> UI means exactly this mismatch — fix the values, don't debug the query.
+
 ### Run with Docker (production parity)
 
 | Service | How | Port | Needs |

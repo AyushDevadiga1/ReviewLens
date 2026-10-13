@@ -154,49 +154,61 @@ def compute_weekly_trend(
     if not aspect_sentiments:
         return []
 
-    # Calculate the cutoff date (N weeks ago from today)
-    cutoff_date = datetime.now() - timedelta(weeks=weeks)
-
     # 1. Filter metrics down to strictly target the single requested aspect token key
     filtered_entries = [
         e for e in aspect_sentiments 
         if e.get("aspect", "").strip().lower() == aspect.strip().lower()
     ]
+    if not filtered_entries:
+        return []
 
-    # Group score vectors by tracking string key names: "YYYY-WXX"
-    weekly_data = defaultdict(list)
-
+    # Parse and extract valid datetime objects
+    valid_entries = []
     for entry in filtered_entries:
         raw_date = entry.get("review_date")
-        
-        # Parse timestamp objects safely out of string representations if required
         if isinstance(raw_date, str):
             try:
                 dt = datetime.fromisoformat(raw_date.replace("Z", ""))
             except ValueError:
-                continue  # Skip rows with malformed dates
+                continue
         elif isinstance(raw_date, datetime):
             dt = raw_date
         else:
             continue
+        valid_entries.append((dt, entry))
 
-        # Skip entries older than the cutoff
-        if dt < cutoff_date:
-            continue
+    if not valid_entries:
+        return []
 
-        # Extract strict ISO Year and ISO Week tracking tokens
-        iso_year, iso_week, _ = dt.isocalendar()
-        week_key = f"{iso_year}-W{iso_week:02d}"
-        
-        sent = entry.get("sentiment", "neutral")
-        conf = entry.get("confidence", 0.5)
-        score = sentiment_to_score(sent, conf)
-        
-        weekly_data[week_key].append(score)
+    # Determine reference anchor: if reviews are historical (>90 days old), anchor to newest review
+    all_dts = [item[0] for item in valid_entries]
+    max_dt = max(all_dts)
+    anchor = datetime.now() if (datetime.now() - max_dt).days < 90 else max_dt
+    cutoff_date = anchor - timedelta(weeks=weeks)
+
+    # First attempt: filter by cutoff_date
+    weekly_data = defaultdict(list)
+    for dt, entry in valid_entries:
+        if dt >= cutoff_date:
+            iso_year, iso_week, _ = dt.isocalendar()
+            week_key = f"{iso_year}-W{iso_week:02d}"
+            sent = entry.get("sentiment", "neutral")
+            conf = entry.get("confidence", 0.5)
+            weekly_data[week_key].append(sentiment_to_score(sent, conf))
+
+    # If cutoff yielded nothing (e.g. data before cutoff), take the last `weeks` distinct week buckets
+    if not weekly_data:
+        all_weekly = defaultdict(list)
+        for dt, entry in valid_entries:
+            iso_year, iso_week, _ = dt.isocalendar()
+            week_key = f"{iso_year}-W{iso_week:02d}"
+            sent = entry.get("sentiment", "neutral")
+            conf = entry.get("confidence", 0.5)
+            all_weekly[week_key].append(sentiment_to_score(sent, conf))
+        sorted_keys = sorted(all_weekly.keys())[-weeks:]
+        weekly_data = {k: all_weekly[k] for k in sorted_keys}
 
     trend_list = []
-
-    # 2. Build aggregated data list maps
     for week_str, scores in weekly_data.items():
         trend_list.append({
             "week": week_str,
@@ -204,10 +216,7 @@ def compute_weekly_trend(
             "review_count": len(scores)
         })
 
-    # 3. Return sorted elements sequentially (Oldest week key string first)
     trend_list.sort(key=lambda x: x["week"])
-    
-    # Return all weeks (already filtered by cutoff_date)
     return trend_list
 
 

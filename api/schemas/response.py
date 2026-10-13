@@ -9,7 +9,7 @@ Architecture note:
   Responses reference product_id (DB integer) not product_url.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from datetime import datetime
 
@@ -26,6 +26,7 @@ class AspectScore(BaseModel):
 
 
 class ReviewFilterSummary(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     """
     Summary of fake review filtering applied to the product's DB reviews.
     Renamed from FakeFilterSummary — 'scraped' is no longer accurate
@@ -91,6 +92,7 @@ class ProductSearchResult(BaseModel):
     product_name: str
     platform: str
     review_count: int          # how many reviews exist in DB for this product
+    aspect_count: int = 0      # how many aspect sentiments exist for this product
 
 
 class HealthResponse(BaseModel):

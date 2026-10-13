@@ -39,13 +39,13 @@ no placeholders).
 | `api/services/` | **Done** — fake detector (v2 + fallback), aggregator, ABSA wrapper, shared pipeline |
 | `api/routers/` | **Done** — analyze, compare, trends, health (+metrics), products, jobs |
 | `api/middleware/` | **Done** — API-key auth + per-key rate limits, `/health` and `/metrics` open |
-| `frontend/` | **Done** — native multipage dashboard (Overview, Single, Compare, Trends, Pipeline) |
-| `monitoring/` | **Done** — Prometheus scrapes real `/metrics`; Grafana provisioned |
+| `frontend/` | **Done** — native multipage dashboard (Overview, Single, Compare, Trends, Pipeline) with search autocomplete, verdict banners and a single-palette theme |
+| `monitoring/` | **Done** — Prometheus scrapes real `/metrics`; Grafana provisioned with dashboard + alert rules (error rate, p95) |
 | `db/migrations/` | Skeleton only — Alembic versions directory is empty (`create_tables()` used instead) |
 
 Known limits, stated plainly: the fake model is hotel-trained (transfers at
 ~80–85% to phone reviews); ABSA needs minutes of CPU per hundred reviews
-(hence jobs); Prometheus has no alert rules yet.
+(hence jobs); alert rules evaluate but have no notification receivers yet.
 
 ### Tests
 
@@ -89,8 +89,16 @@ runs. Inside Docker, `docker-compose.yml` values take precedence.
 
 ### Run without Docker (recommended for development)
 
-Two terminal windows, no containers. First boot takes ~3 minutes
-(model loads), then everything is instant to restart.
+One command from a fresh clone (after `pip install -r requirements.txt`):
+
+```bash
+python demo.py [--seed N] [--no-seed] [--port 8000] [--ui-port 8501]
+```
+
+This sets demo env defaults, downloads the spacy model if missing, creates
+SQLite tables, seeds sample reviews when empty, boots the API (waiting for
+health itself), then brings up the dashboard. Ctrl+C stops both servers.
+Prefer two manual terminals? The equivalent, spelled out:
 
 Terminal 1 — API (PowerShell shown; bash exports equivalently):
 
@@ -335,20 +343,18 @@ reviewlens/
 └── README.md
 ```
 
-## Implementation Order
+## Roadmap
 
-Backend first, frontend last. Do not build the frontend until `POST /analyze`
-returns correct JSON in Swagger UI.
+Everything above ships and is verified. What remains, in rough priority
+order:
 
-| Phase | Scope | State |
+| Next | Why | Size |
 |---|---|---|
-| 1. DB foundation | `db/models.py` → `db/session.py` | ✅ done |
-| 2. Data ingestion | `data_ingestion/cleaner.py` → `amazon_loader.py` → `flipkart_loader.py` | 🚧 cleaner done, loaders stub |
-| 3. ML models | fake-review training → aspects config → ABSA inference | 🚧 aspects done, rest stub |
-| 4. Services | fake detector service → aggregator | ⬜ not started |
-| 5. API | schemas → routers → app wiring | 🚧 schemas done, routers stub |
-| 6. Frontend | single-product → compare → trends | ⬜ not started |
-| 7. Tests | pytest per module → manual Swagger check | 🚧 13 of 46 tests assert anything |
-
-Phase 1 is finished. Phase 2 is the current work — `cleaner.py` is done and
-covered, so `amazon_loader.py` is next.
+| Alert receivers (email/webhook) for the Grafana rules | rules evaluate; nobody gets paged | S |
+| Decide auth keep/drop for demos | auth is live; frictionless demo wants it off | decision |
+| Push `main` to origin | all commits still local-only | one command |
+| Bulk-fetch analysis writes past ~10k reviews/product | N+1 is noise today, real at scale | M |
+| Multi-worker scaling (commit chunking, OMP tuning) | single worker queues concurrent analyses | M |
+| GPU path for ABSA | ~7 s/review CPU is the pipeline's floor | L (hardware) |
+| Mobile/narrow-viewport pass | desktop-only so far | S |
+| Alembic migrations | `create_tables()` forever works until the schema must evolve live | M |

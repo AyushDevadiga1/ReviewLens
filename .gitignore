@@ -40,3 +40,8 @@ checkpoints.json
 
 # Local SQLite scratch/demo databases
 *.db
+
+# Local QA artifacts (screenshots, scratch harnesses)
+outputs/
+css_test.html
+scratch_inspect.py

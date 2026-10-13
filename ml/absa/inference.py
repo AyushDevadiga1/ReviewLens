@@ -13,6 +13,10 @@ from dataclasses import dataclass
 import os
 os.environ["PYABSA_DISABLE_CUDNN"] = "1"
 os.environ["AUTO_DEVICE"] = "False"
+# Measured: torch defaults to 2 threads here, leaving half the CPU idle
+# and each review ~15% slower. Set before torchaudio/torch initializes pools.
+os.environ.setdefault("OMP_NUM_THREADS", str(os.cpu_count() or 4))
+os.environ.setdefault("MKL_NUM_THREADS", str(os.cpu_count() or 4))
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -52,6 +56,21 @@ class ABSAInference:
               checkpoint='multilingual',
               auto_device=False
           )
+        try:
+            import torch
+            torch.set_num_threads(os.cpu_count() or 4)
+            torch.set_num_interop_threads(os.cpu_count() or 4)
+        except Exception:
+            pass  # thread tuning is best-effort, never fatal
+
+        # Warm-up: first predict pays ~3 s of lazy init — pay it here at
+        # boot, not on the first user's request.
+        try:
+            self.sentiment_analyzer.predict(
+                "The battery lasts long.", print_result=False,
+                save_result=False)
+        except Exception:
+            pass
 
     def _build_aspect_results(self, aspects, sentiments, confidences) -> List[AspectResult]:
         """
@@ -99,7 +118,8 @@ class ABSAInference:
           4. Return ReviewABSAResult
         """
         
-        result = self.sentiment_analyzer.predict(review_text)
+        result = self.sentiment_analyzer.predict(
+            review_text, print_result=False, save_result=False)
 
         # 2.3.x returns one dict for a single text; tolerate list-wrapped
         # results so a minor-version shape change degrades instead of 500s.
@@ -123,7 +143,8 @@ class ABSAInference:
           Parse results list into List[ReviewABSAResult]
         """
         
-        results = self.sentiment_analyzer.predict(review_texts)
+        results = self.sentiment_analyzer.predict(
+            review_texts, print_result=False, save_result=False)
 
         # Ensure results is treated as a list even if a single string was passed
         if isinstance(results, dict):

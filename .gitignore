@@ -37,3 +37,6 @@ Thumbs.db
 checkpoints/
 checkpoints.json
 *.result.json
+
+# Local SQLite scratch/demo databases
+*.db

@@ -8,6 +8,8 @@ import plotly.graph_objects as go
 import streamlit as st
 from typing import List
 
+from components import theme
+
 
 def render_radar_chart(product_data: List[dict], aspect_display_names: List[str]):
     """
@@ -23,7 +25,7 @@ def render_radar_chart(product_data: List[dict], aspect_display_names: List[str]
         st.info("No aspect data to chart yet — analyze a product first.")
         return
 
-    fig = go.Figure()
+    fig = theme.style_fig(go.Figure(), height=430)
     for product in product_data:
         scores = product.get("scores", {})
         ordered = [float(scores.get(axis, 0.0)) for axis in aspect_display_names]
@@ -32,10 +34,22 @@ def render_radar_chart(product_data: List[dict], aspect_display_names: List[str]
             theta=aspect_display_names + [aspect_display_names[0]],
             fill='toself',
             name=product.get("name", "product"),
+            line=dict(width=2),
+            opacity=0.85,
         ))
     fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
+        polar=dict(
+            bgcolor="rgba(0,0,0,0)",
+            radialaxis=dict(visible=True, range=[0, 10], gridcolor="#26314B",
+                            linecolor="#26314B", tickfont=dict(color=theme.MUTED, size=10)),
+            angularaxis=dict(gridcolor="#26314B", linecolor="#26314B",
+                             tickfont=dict(color=theme.TEXT, size=11)),
+        ),
         showlegend=True,
-        title="Aspect Sentiment Comparison",
+        title=dict(text="Aspect Sentiment Comparison",
+                   font=dict(color=theme.TEXT, size=15), x=0.02),
+        legend=dict(orientation="h", yanchor="top", y=-0.04,
+                    xanchor="center", x=0.5, font=dict(color=theme.TEXT, size=11)),
+        margin=dict(t=55, b=95, l=75, r=75),
     )
     st.plotly_chart(fig, use_container_width=True)

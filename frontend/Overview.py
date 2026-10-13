@@ -1,4 +1,4 @@
-import os
+﻿import os
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -66,9 +66,9 @@ with hero_col1:
         st.page_link("pages/2_Compare_Products.py", label="Compare Products", use_container_width=True)
 
 with hero_col2:
-    hero_img = os.path.join(os.path.dirname(__file__), "assets", "reviewlens_hero.jpg")
-    if os.path.exists(hero_img):
-        st.image(hero_img, use_container_width=True)
+    arch_img = os.path.join(os.path.dirname(__file__), "assets", "reviewlens_architecture.jpg")
+    if os.path.exists(arch_img):
+        st.image(arch_img, use_column_width=True, caption="ReviewLens End-to-End System Architecture")
 
 st.divider()
 
@@ -270,7 +270,7 @@ theme.section("System architecture topology")
 
 arch_img = os.path.join(os.path.dirname(__file__), "assets", "reviewlens_architecture.jpg")
 if os.path.exists(arch_img):
-    st.image(arch_img, use_container_width=True,
+    st.image(arch_img, use_column_width=True,
              caption="ReviewLens end-to-end system architecture")
 
 st.markdown(

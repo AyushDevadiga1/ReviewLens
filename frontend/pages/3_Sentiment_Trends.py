@@ -51,8 +51,12 @@ def render_trend_overlay(series: dict):
         ), secondary_y=True)
     fig = theme.style_fig(fig, score_bands=True)
     fig.update_layout(
-        title="Weekly Aspect Sentiment Trajectory vs Review Volume",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        title=dict(text="Weekly Aspect Sentiment Trajectory vs Review Volume",
+                   x=0.0, xanchor="left", y=0.99, yanchor="top",
+                   font=dict(color=theme.TEXT, size=15)),
+        legend=dict(orientation="h", yanchor="bottom", y=1.04,
+                    xanchor="left", x=0, font=dict(color=theme.TEXT, size=11)),
+        margin=dict(t=115, b=55, l=55, r=25),
     )
     fig.update_yaxes(title_text="Mean Score (0–10)", range=[0, 10.5], secondary_y=False)
     fig.update_yaxes(title_text="Weekly Mentions", secondary_y=True)

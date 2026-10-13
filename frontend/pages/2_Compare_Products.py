@@ -38,11 +38,15 @@ def _render_grouped_bar(by_name: dict, ordered_names: list, axes: list):
         ))
     fig.update_layout(
         barmode="group",
-        title="Comparative Aspect Quality Scores (0–10 Scale)",
+        title=dict(text="Comparative Aspect Quality Scores (0–10 Scale)",
+                   x=0.0, xanchor="left", y=0.99, yanchor="top",
+                   font=dict(color=theme.TEXT, size=15)),
         xaxis_title="Aspect Dimension",
         yaxis_title="Mean Score (0–10)",
         yaxis=dict(range=[0, 10.5]),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        legend=dict(orientation="h", yanchor="bottom", y=1.04,
+                    xanchor="left", x=0, font=dict(color=theme.TEXT, size=11)),
+        margin=dict(t=110, b=60, l=50, r=20),
     )
     st.plotly_chart(fig, use_container_width=True)
 

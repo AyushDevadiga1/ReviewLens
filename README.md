@@ -64,12 +64,14 @@ price of integration tests that actually integrate.
 
 ## Getting Started
 
-Prerequisites: Python 3.11, Docker Desktop.
+Prerequisites: Python 3.11. Docker Desktop is **optional** — needed only
+for the production-style stack, not for development.
 
 ```bash
 python -m venv .venv
 .venv\Scripts\activate          # Windows
 pip install -r requirements.txt
+python -m spacy download en_core_web_sm
 ```
 
 Copy `.env.example` to `.env` (`cp` on Linux/macOS) and set the secrets —
@@ -85,15 +87,41 @@ runs. Inside Docker, `docker-compose.yml` values take precedence.
 | `MLFLOW_TRACKING_URI` | Where training runs are logged |
 | `SQL_ECHO` | Log every SQL statement **and bound parameters** — review text ends up in logs. Dev only. |
 
-### Services that must run in parallel
+### Run without Docker (recommended for development)
+
+Two terminal windows, no containers. First boot takes ~3 minutes
+(model loads), then everything is instant to restart.
+
+Terminal 1 — API (PowerShell shown; bash exports equivalently):
+
+```powershell
+cd C:\path\to\ReviewLens
+$env:DATABASE_URL = "sqlite:///demo.db"
+$env:API_KEY_SECRET = "demo-key"
+.\.venv\Scripts\python.exe -m uvicorn api.main:app --port 8000
+```
+
+Terminal 2 — dashboard:
+
+```powershell
+cd C:\path\to\ReviewLens
+$env:PYTHONPATH = "C:\path\to\ReviewLens"
+$env:API_BASE_URL = "http://localhost:8000"
+$env:API_KEY = "demo-key"
+.\.venv\Scripts\streamlit run frontend/Overview.py
+```
+
+Open http://localhost:8501. Your analyses land in `demo.db` (safe to delete).
+
+### Run with Docker (production parity)
 
 | Service | How | Port | Needs |
 |---|---|---|---|
 | Postgres (`db`) | `docker compose up -d db` | 5433 → 5432 | — (comes first; API waits on it) |
-| FastAPI (`api`) | `docker compose up -d api` **or** `python -m uvicorn api.main:app --port 8000` | 8000 | `db` healthy, `API_KEY_SECRET` set |
-| Streamlit (`frontend`) | `docker compose up -d frontend` **or** `streamlit run frontend/Overview.py` | 8501 | `api` reachable |
+| FastAPI (`api`) | `docker compose up -d api` **or** uvicorn above | 8000 | `db` healthy, `API_KEY_SECRET` set |
+| Streamlit (`frontend`) | `docker compose up -d frontend` **or** streamlit above | 8501 | `api` reachable |
 | MLflow (`mlflow`) | `docker compose up -d mlflow` | 5000 | optional (training logs only) |
-| Prometheus + Grafana | `docker compose up -d prometheus grafana` | 9090 / 3000 | optional (metrics not wired yet) |
+| Prometheus + Grafana | `docker compose up -d prometheus grafana` | 9090 / 3000 | optional (observability only) |
 
 Do **not** run plain `docker compose up -d` with stale images — old
 `api`/`frontend` containers steal ports 8000/8501. Either rebuild first
@@ -111,38 +139,12 @@ docker compose build api frontend
 docker compose up -d
 ```
 
-### Why all these services — and the shortcut
+### Why all these services
 
-Each container earns its place, but not all are required to click through:
-
-| Service | Role | Required? |
-|---|---|---|
-| `db` (Postgres) | stores everything | yes — or use SQLite (below) |
-| `api` (FastAPI) | ML pipeline + jobs + auth | yes |
-| `frontend` (Streamlit) | this dashboard | yes for UI, no for API-only use |
-| `mlflow` | training experiment log | no (training-time only) |
-| `prometheus` + `grafana` | metrics + dashboards | no (observability only) |
-
-**5-minute demo mode (no Docker at all):** SQLite + host processes.
-First run downloads the ABSA checkpoint + spacy model (~2.5 GB,
-one-time, needs network); afterwards it works offline.
-
-```bash
-pip install -r requirements.txt
-python -m spacy download en_core_web_sm
-DATABASE_URL="sqlite:///demo.db" API_KEY_SECRET=demo-key \
-  python -m uvicorn api.main:app --port 8000 &
-API_BASE_URL=http://localhost:8000 API_KEY=demo-key \
-  streamlit run frontend/Overview.py
-```
-(Inline `VAR=value` is bash; on Windows PowerShell set
-`$env:DATABASE_URL`, `$env:API_KEY_SECRET`, `$env:API_BASE_URL`,
-`$env:API_KEY` first, then run the same commands foreground.)
-
-Trade-offs vs Docker: SQLite serialises writes (fine for demos, not for
-concurrent load); no Prometheus/Grafana; models live in `./checkpoints`
-and `./ml/fake_review/model` (both gitignored). Anything you analyse
-lands in `demo.db`, safe to delete.
+See the tables above: only `db` + `api` + `frontend` are required, and
+each has a no-Docker equivalent. The rule of thumb: develop without
+Docker (instant restarts, no 6 GB images); bring the stack up for
+multi-user testing, observability, and anything resembling production.
 
 Production (no dev override with `--reload` and code mounts):
 
